@@ -110,10 +110,10 @@ se corta, se retoma desde acá.
 - [x] 26. Looks
 - [x] 27. Estabilización (vidstab 2 pasadas)
 - [x] 28. Nitidez y reducción de ruido de imagen
-- [ ] 29. Texto y títulos
-- [ ] 30. Subtítulos `.srt`
+- [x] 29. Texto y títulos
+- [x] 30. Subtítulos `.srt`
 - [ ] 31. Subtítulos automáticos (whisper.cpp)
-- [ ] 32. Marca de agua / logo
+- [x] 32. Marca de agua / logo
 - [ ] 33. Desenfocar / pixelar zona
 - [ ] 34. Picture-in-picture
 - [ ] Tests completos + instalador final
@@ -125,6 +125,10 @@ se corta, se retoma desde acá.
   curvas con `lutrgb` evaluadas con los mismos coeficientes que la tabla del preview) → encajar
   → zoom/paneo (`perspective` con expresiones por cuadro; ojo: su `in` arranca en 1).
 - Los looks están en `src-tauri/core/config/looks.json` (los leen Rust y el frontend).
+- **Capas (textos, subtítulos, logos)**: un solo dibujante en canvas 2D (`src/engine/raster.ts`).
+  El preview lo usa en vivo; la exportación genera un PNG por estado distinto + lista ffconcat
+  (cada tramo arranca medio cuadro antes) que Rust superpone. Paridad SSIM ≥ 0,987.
+  Los textos van siempre por encima de los clips y del PiP; los subtítulos, arriba de todo.
 - El lienzo automático sigue al tamaño visible del primer clip (rotado/recortado).
 - whisper.cpp: los binarios oficiales para Windows solo traen CPU o CUDA (670 MB). Se compila
   con MinGW + Vulkan (`scripts/build-whisper.sh`): GPU de NVIDIA, AMD o Intel, y la CPU como
