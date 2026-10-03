@@ -477,6 +477,44 @@ pub async fn save_png(path: String, png_base64: String) -> CmdResult<String> {
     .await
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RasterFile {
+    pub name: String,
+    pub data: String,
+}
+
+/// Escribe PNG de capas (textos, subtítulos, máscaras) en la carpeta de un trabajo.
+#[tauri::command]
+pub async fn write_raster_files(state: State<'_, AppState>, id: String, files: Vec<RasterFile>) -> CmdResult<String> {
+    let root = state.raster_dir();
+    blocking(move || {
+        let decoded = files
+            .into_iter()
+            .map(|f| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(f.data.trim_start_matches("data:image/png;base64,"))
+                    .map(|b| (f.name, b))
+                    .map_err(|e| AppError::with_detail(ErrorKind::Unknown, e.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        snip_core::raster::write_files(&root, &id, &decoded).map(|d| d.to_string_lossy().into_owned())
+    })
+    .await
+}
+
+/// Escribe la lista ffconcat de una capa y devuelve su ruta.
+#[tauri::command]
+pub async fn write_raster_list(state: State<'_, AppState>, id: String, name: String, text: String) -> CmdResult<String> {
+    let root = state.raster_dir();
+    blocking(move || snip_core::raster::write_list(&root, &id, &name, &text).map(|p| p.to_string_lossy().into_owned())).await
+}
+
+/// Descarta las capas de un trabajo que no llegó a la cola.
+#[tauri::command]
+pub fn discard_raster(state: State<'_, AppState>, dir: String) {
+    snip_core::raster::remove_job_dir(&state.raster_dir(), &dir);
+}
+
 /// ¿Existen estos archivos? (para avisar de medios movidos o borrados).
 #[tauri::command]
 pub fn files_exist(paths: Vec<String>) -> Vec<bool> {

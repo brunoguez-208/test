@@ -5,13 +5,14 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { MediaRef, Project, TransitionKind } from "../src/project/model";
 import { canvasFps } from "../src/project/model";
 import { fitCanvas, insertMedia, newProject, setTransition, updateClip } from "../src/project/ops";
 import { LOOKS } from "../src/engine/color";
+import { addImage, addText, setCues } from "../src/project/overlayOps";
 import { layout } from "../src/project/timeline";
 
 const FF_DIR = process.env.SNIP_FFMPEG_DIR ?? "/opt/ffmpeg9/bin";
@@ -54,6 +55,9 @@ test.beforeAll(() => {
   makeVideo("a.webm", "testsrc2=s=640x360:r=30:d=4");
   makeVideo("b.webm", "testsrc2=s=640x360:r=30:d=4,hue=h=140,hflip");
   makeVideo("c.webm", "testsrc=s=360x360:r=30:d=4");
+  // Logo con transparencia (PNG).
+  ff(["-loglevel", "error", "-f", "lavfi", "-i", "color=c=0xFF6A00@0.85:s=240x120,format=rgba,drawbox=x=20:y=20:w=80:h=80:color=white@1:t=fill", "-frames:v", "1", join(dir, "logo.png")]);
+  media["logo.png"] = JSON.parse(snipRender(["probe", join(dir, "logo.png"), "logo"]));
 });
 
 test.afterAll(() => {
@@ -62,10 +66,10 @@ test.afterAll(() => {
   else if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-function exportProject(p: Project, name: string): string {
+function exportProject(p: Project, name: string, raster: { decor: string } | null = null): string {
   const out = join(dir, `${name}.mp4`);
   const job = join(dir, `${name}.json`);
-  writeFileSync(job, JSON.stringify({ project: p, output: out, saveProject: false }));
+  writeFileSync(job, JSON.stringify({ project: p, output: out, saveProject: false, raster }));
   snipRender(["export", job, join(dir, "work")]);
   return out;
 }
@@ -80,7 +84,7 @@ function exportedFrames(file: string, frames: number[], tag: string): string[] {
 }
 
 async function previewFrames(page: Page, p: Project, frames: number[], tag: string): Promise<string[]> {
-  const urls = Object.fromEntries(p.media.map((m) => [m.path, `/parity-media/${encodeURIComponent(m.path.split(/[\\/]/).pop()!)}`]));
+  const urls = mediaUrls(p);
   const pngs = await page.evaluate(
     ({ p, urls, frames }) => (window as unknown as { __snipParity: { render: (...a: unknown[]) => Promise<string[]> } }).__snipParity.render(p, urls, frames),
     { p, urls, frames },
@@ -103,12 +107,30 @@ function compare(a: string, b: string): number {
   return Number(m[1]);
 }
 
+function mediaUrls(p: Project): Record<string, string> {
+  return Object.fromEntries(p.media.map((m) => [m.path, `/parity-media/${encodeURIComponent(m.path.split(/[\\/]/).pop()!)}`]));
+}
+
+/** Capa de decoración generada en el navegador (igual que la app) y escrita a disco. */
+async function rasterFor(page: Page, p: Project, tag: string): Promise<{ decor: string } | null> {
+  const r = await page.evaluate(
+    ({ p, urls }) => (window as unknown as { __snipParity: { raster: (...a: unknown[]) => Promise<{ files: { name: string; data: string }[]; list: string } | null> } }).__snipParity.raster(p, urls),
+    { p, urls: mediaUrls(p) },
+  );
+  if (!r) return null;
+  const rd = join(dir, `raster-${tag}`);
+  mkdirSync(rd, { recursive: true });
+  for (const f of r.files) writeFileSync(join(rd, f.name), Buffer.from(f.data, "base64"));
+  writeFileSync(join(rd, "decor.ffconcat"), r.list);
+  return { decor: join(rd, "decor.ffconcat") };
+}
+
 async function check(page: Page, p: Project, frames: Record<string, number>, tag: string, min: number, control = false) {
   await page.route("**/parity-media/*", (route) => route.fulfill({ path: join(dir, decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop()!)) }));
   await page.goto("/");
   await expect(page.getByTestId("welcome-open")).toBeVisible();
   const ks = Object.values(frames);
-  const exp = exportedFrames(exportProject(p, tag), ks, tag);
+  const exp = exportedFrames(exportProject(p, tag, await rasterFor(page, p, tag)), ks, tag);
   const prev = await previewFrames(page, p, ks, tag);
   const results = Object.keys(frames).map((label, i) => ({ label, frame: ks[i], ssim: compare(prev[i], exp[i]) }));
   for (const r of results) {
@@ -212,4 +234,22 @@ test("paridad: zoom y paneo con keyframes", async ({ page }) => {
   });
   p = withVideo(p, 1, { zoom: [{ id: 1, t: 0, zoom: 3, cx: 0.6, cy: 0.4, easing: "linear" }] });
   await check(page, p, { "antes": 10, "acercando": 35, "en-key": 60, "paneando": 80, "acotado-al-borde": 110, "zoom-fijo": 150 }, "zoom", 0.95);
+});
+
+test("paridad: textos animados, logo y subtítulos palabra por palabra", async ({ page }) => {
+  test.setTimeout(300_000);
+  let p = base([["a.webm", 0, 4], ["b.webm", 0, 2]]);
+  [p] = addText(p, "title", 0.5); // pop de entrada (0,45 s) y fundido de salida
+  [p] = addText(p, "lowerThird", 1); // fondo redondeado, deslizar
+  [p] = addText(p, "impact", 3.4); // contorno
+  [p] = addImage(p, media["logo.png"]);
+  p = { ...p, overlays: p.overlays.map((o) => (o.type === "image" ? { ...o, opacity: 0.8, radius: 0.2, shadow: true } : o)) };
+  p = setCues(p, [
+    { id: "s1", start: 0.2, end: 2.2, text: "hola a todos", words: [] },
+    { id: "s2", start: 2.4, end: 5.5, text: "esto es palabra por palabra", words: [
+      { start: 2.4, end: 2.9, text: "esto" }, { start: 2.9, end: 3.2, text: "es" }, { start: 3.2, end: 4, text: "palabra" }, { start: 4, end: 4.6, text: "por" }, { start: 4.6, end: 5.5, text: "palabra" },
+    ] },
+  ]);
+  p = { ...p, subtitles: { ...p.subtitles, wordByWord: true, style: { ...p.subtitles.style, background: { color: "#000000", opacity: 0.5, padding: 0.3, radius: 0.2 } } } };
+  await check(page, p, { "pop-entrando": 20, "zocalo-deslizando": 35, "quieto": 50, "palabra-1": 80, "palabra-3": 110, "impacto": 108, "logo-y-saliendo": 160 }, "capas", 0.95);
 });

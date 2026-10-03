@@ -12,7 +12,8 @@ import {
   pickSavePath,
 } from "../lib/platform";
 import { basename, dirname, isAudio, isProjectFile, isVideo, stem } from "../lib/files";
-import { toAppError, type AppError, type ExportJob, type QueueItem } from "../lib/types";
+import { toAppError, type AppError, type ExportJob, type QueueItem, type RasterSpec } from "../lib/types";
+import { decorSignature, hasDecor, renderDecorSequence, type DecorSequence } from "../engine/raster";
 import type { Clip, ExportSettings, MediaRef, Project } from "../project/model";
 import { canvasFps, canvasFpsExpr } from "../project/model";
 import { EditError, addMusic as addMusicOp, addRange, fitCanvas, insertMedia, makeId, newProject } from "../project/ops";
@@ -24,6 +25,7 @@ import {
   activeTab,
   ask,
   closeTabState,
+  dismissToast,
   edit,
   editSignature,
   gestureCancel,
@@ -592,6 +594,57 @@ export function buildJob(p: Project, opts: { settings?: ExportSettings; window?:
 }
 
 /** Manda el proyecto (o un rango) a la cola de exportación. */
+// ---- Capas rasterizadas (textos, subtítulos, logos) para la exportación ----
+
+let decorCache: { sig: string; seq: DecorSequence } | null = null;
+
+async function blobToBase64(b: Blob): Promise<string> {
+  const bytes = new Uint8Array(await b.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * Genera (o reusa) la secuencia de PNG de la capa de decoración y la escribe en
+ * una carpeta propia del trabajo. Devuelve null si el proyecto no tiene capas.
+ */
+export async function prepareRaster(p: Project): Promise<RasterSpec | null> {
+  if (!hasDecor(p)) return null;
+  const sig = `${decorSignature(p)}#${p.canvas.width}x${p.canvas.height}#${totalDuration(p).toFixed(4)}`;
+  let seq = decorCache?.sig === sig ? decorCache.seq : null;
+  if (!seq) {
+    const toast = pushToast({ severity: "info", title: "Preparando textos y subtítulos…" });
+    try {
+      await player().images.ready(p);
+      seq = await renderDecorSequence(p, player().images);
+    } finally {
+      dismissToast(toast);
+    }
+    if (!seq) return null;
+    decorCache = { sig, seq };
+  }
+  const id = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  let dir = "";
+  // En tandas de ~4 MB para no mandar un mensaje gigante por IPC.
+  let batch: { name: string; data: string }[] = [];
+  let size = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    dir = await api.writeRasterFiles(id, batch);
+    batch = [];
+    size = 0;
+  };
+  for (const f of seq.frames) {
+    batch.push({ name: f.name, data: await blobToBase64(f.png) });
+    size += f.png.size;
+    if (size > 4_000_000) await flush();
+  }
+  await flush();
+  const decor = await api.writeRasterList(id, "decor.ffconcat", seq.list);
+  return { dir, decor };
+}
+
 export async function enqueueExport(opts: { window?: { start: number; end: number }; label?: string; output?: string | null } = {}) {
   const p = activeProject();
   if (!p) return;
@@ -600,8 +653,10 @@ export async function enqueueExport(opts: { window?: { start: number; end: numbe
     return;
   }
   const title = opts.label ? `${p.name || "Proyecto"} · ${opts.label}` : p.name || "Proyecto";
+  let raster: RasterSpec | null = null;
   try {
-    await api.enqueueExport(buildJob(p, opts), title);
+    raster = await prepareRaster(p);
+    await api.enqueueExport({ ...buildJob(p, opts), raster }, title);
     pushToast({
       severity: "info",
       title: "Exportando en segundo plano",
@@ -609,6 +664,7 @@ export async function enqueueExport(opts: { window?: { start: number; end: numbe
       action: { label: "Ver cola", run: () => useEditor.setState({ queueOpen: true }) },
     });
   } catch (e) {
+    if (raster?.dir) void api.discardRaster(raster.dir).catch(() => {});
     notifyError("No se pudo exportar", e);
   }
 }

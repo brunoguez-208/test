@@ -149,7 +149,15 @@ export interface ExportJob {
   output?: string | null;
   label?: string | null;
   saveProject?: boolean;
-  raster?: unknown;
+  raster?: RasterSpec | null;
+}
+
+/** Capas rasterizadas ya escritas en disco (rutas a listas ffconcat). */
+export interface RasterSpec {
+  dir?: string | null;
+  decor?: string | null;
+  masks?: Record<string, string>;
+  pips?: Record<string, { mask: string; shadow?: string | null; width: number; height: number; x: number; y: number; shadowX?: number; shadowY?: number }>;
 }
 
 export type Stage = "preparing" | "copying" | "encoding" | "firstPass" | "secondPass" | "retrying";

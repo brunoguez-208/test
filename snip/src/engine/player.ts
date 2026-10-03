@@ -9,6 +9,7 @@ import { dbToGain, resumeAudio, setGain, setMasterVolume } from "./audio";
 import { Renderer, type ClipDraw, type FrameDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
+import { DecorLayer, ImageCache } from "./raster";
 
 export interface ClipSource {
   url: string;
@@ -21,8 +22,6 @@ export interface SourceResolver {
   mediaUrl(media: MediaRef): string | null;
   /** Picos de la forma de onda (100 por segundo) si ya se cargaron. */
   peaks(media: MediaRef): Uint8Array | null;
-  /** Capas rasterizadas (texto/subtítulos) para el tiempo t, si hay. */
-  layers?(t: number, w: number, h: number): TexImageSource[];
 }
 
 interface Slot {
@@ -75,11 +74,21 @@ export class Player {
   muted = false;
   renderW = 1920;
   renderH = 1080;
+  readonly images: ImageCache;
+  private decor: DecorLayer;
   /** Edición del recorte / zoom: el clip se dibuja sin recorte o sin zoom. */
   override: { clipId: string; noCrop?: boolean; noZoom?: boolean } | null = null;
 
   constructor(resolver: SourceResolver) {
     this.resolver = resolver;
+    this.images = new ImageCache(
+      (m) => this.resolver.mediaUrl(m),
+      () => {
+        this.decor.invalidate();
+        this.requestRender();
+      },
+    );
+    this.decor = new DecorLayer(this.images);
     this.host = document.createElement("div");
     this.host.setAttribute("aria-hidden", "true");
     this.host.style.cssText = "position:fixed;left:-20px;top:-20px;width:2px;height:2px;opacity:0;pointer-events:none;overflow:hidden";
@@ -565,6 +574,13 @@ export class Player {
     }
   }
 
+  private decorLayers(w: number, h: number): { source: TexImageSource; key: string }[] {
+    const p = this.project;
+    if (!p) return [];
+    const c = this.decor.get(p, this.time, w, h);
+    return c ? [{ source: c, key: `decor${this.decor.version}` }] : [];
+  }
+
   /** Arma la descripción del cuadro actual. */
   frameDraw(): FrameDraw | null {
     const p = this.project;
@@ -579,7 +595,7 @@ export class Player {
       b,
       transition: f.b !== null && kind ? { kind, progress: f.progress } : null,
       fade: this.globalFade(),
-      layers: this.resolver.layers?.(this.time, this.renderW, this.renderH) ?? [],
+      layers: this.decorLayers(this.renderW, this.renderH),
     };
   }
 
@@ -636,7 +652,10 @@ export class Player {
       const f = this.frameDraw();
       if (!f) throw new Error("Sin cuadro");
       if (f.transition && !f.b) f.transition = null;
-      f.layers = this.resolver.layers?.(this.time, w, h) ?? [];
+      // Otra resolución: una capa propia (no pisa la caché del preview).
+      const own = new DecorLayer(this.images);
+      const c = own.get(p, this.time, w, h);
+      f.layers = c ? [{ source: c, key: `capture${own.version}` }] : [];
       r.render(f, w, h);
       return canvas.toDataURL("image/png");
     } finally {

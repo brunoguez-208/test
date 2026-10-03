@@ -91,7 +91,12 @@ pub fn run() {
                     let heavy = st.heavy_dir();
                     let temp = st.temp_dir();
                     let env = ExportEnv { tools: &st.tools, encoder: st.encoder(), heavy_dir: &heavy, temp_dir: &temp };
-                    export_project(&env, job, ctl, progress, |failed| st.mark_encoder_failed(failed))
+                    let r = export_project(&env, job, ctl, progress, |failed| st.mark_encoder_failed(failed));
+                    // Las capas rasterizadas de este trabajo ya no hacen falta.
+                    if let Some(dir) = job.raster.as_ref().and_then(|r| r.dir.as_deref()) {
+                        snip_core::raster::remove_job_dir(&st.raster_dir(), dir);
+                    }
+                    r
                 }),
                 Arc::new(move |items| {
                     let _ = h_list.emit("queue-updated", QueueEvent { items });
@@ -169,6 +174,9 @@ pub fn run() {
             commands::open_snip,
             commands::save_snip,
             commands::save_png,
+            commands::write_raster_files,
+            commands::write_raster_list,
+            commands::discard_raster,
             commands::files_exist,
             commands::reveal_in_folder,
             commands::open_in_default_app,

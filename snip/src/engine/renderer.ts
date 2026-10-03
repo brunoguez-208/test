@@ -28,8 +28,8 @@ export interface FrameDraw {
   b: ClipDraw | null;
   transition: { kind: string; progress: number } | null;
   fade: number;
-  /** Capas RGBA (premultiplicadas) del tamaño del lienzo, en orden. */
-  layers: TexImageSource[];
+  /** Capas RGBA del tamaño del lienzo, en orden. `key` cambia cuando cambia el contenido. */
+  layers: { source: TexImageSource; key: string }[];
 }
 
 interface Program {
@@ -71,6 +71,7 @@ export class Renderer {
   private layerTex: WebGLTexture;
   private curveTex: WebGLTexture[] = [];
   private curveKey: (string | null)[] = [null, null];
+  private layerKey = "";
   lost = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -253,9 +254,13 @@ export class Renderer {
       gl.bindTexture(gl.TEXTURE_2D, result.tex);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.layerTex);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      // Solo se sube la textura si la capa cambió (texto quieto = sin costo por cuadro).
+      if (layer.key !== this.layerKey || f.layers.length > 1) {
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer.source);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        this.layerKey = f.layers.length > 1 ? "" : layer.key;
+      }
       gl.uniform2f(P.loc.uSize, renderW, renderH);
       gl.uniform1i(P.loc.uBase, 0);
       gl.uniform1i(P.loc.uLayer, 1);

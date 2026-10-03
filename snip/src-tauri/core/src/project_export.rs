@@ -67,6 +67,9 @@ impl ExportJob {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RasterSpec {
+    /// Carpeta del trabajo (se borra al terminar).
+    #[serde(default)]
+    pub dir: Option<String>,
     #[serde(default)]
     pub decor: Option<String>,
     #[serde(default)]

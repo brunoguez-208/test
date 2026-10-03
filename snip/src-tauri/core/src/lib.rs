@@ -16,6 +16,7 @@ pub mod naming;
 pub mod probe;
 pub mod progress;
 pub mod queue;
+pub mod raster;
 pub mod project;
 pub mod project_export;
 pub mod runner;

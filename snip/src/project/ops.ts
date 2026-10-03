@@ -196,6 +196,7 @@ export function deleteClips(p: Project, ids: string[]): Project {
     clips,
     music: p.music.filter((m) => !set.has(m.id)),
     overlays: p.overlays.filter((o) => !set.has(o.id)),
+    subtitles: p.subtitles.cues.some((c) => set.has(c.id)) ? { ...p.subtitles, cues: p.subtitles.cues.filter((c) => !set.has(c.id)) } : p.subtitles,
     markers: p.markers.filter((m) => !set.has(m.id)),
     ranges: p.ranges.filter((r) => !set.has(r.id)),
   };

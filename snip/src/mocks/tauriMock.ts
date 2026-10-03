@@ -106,6 +106,8 @@ export interface MockState {
   exportMs: number;
   /** Pausa la cola (para testear la espera y el reordenamiento). */
   holdQueue: boolean;
+  /** Capas rasterizadas recibidas: carpeta → archivos (y listas ffconcat). */
+  raster: Record<string, { files: string[]; lists: Record<string, string> }>;
 }
 
 function seedProject(name: string, paths: string[], updatedAt: number): Project {
@@ -173,6 +175,7 @@ export function installTauriMock() {
     queue: [],
     exportMs: Number(params.get("exportMs") ?? 1500),
     holdQueue: false,
+    raster: {},
   };
   if (params.get("seed") === "1") {
     const a = seedProject("Vacaciones en la costa", ["C:\\Users\\Bruno\\Videos\\playa.mp4", "C:\\Users\\Bruno\\Videos\\atardecer.mov"], now - 5 * 60_000);
@@ -427,6 +430,20 @@ export function installTauriMock() {
         }
         case "save_png":
           return String(a.path);
+        case "write_raster_files": {
+          const id = String(a.id);
+          const r = (state.raster[id] ??= { files: [], lists: {} });
+          for (const f of a.files as { name: string; data: string }[]) r.files.push(f.name);
+          return `C:\\Users\\Bruno\\AppData\\Local\\Snip\\raster\\${id}`;
+        }
+        case "write_raster_list": {
+          const id = String(a.id);
+          const r = (state.raster[id] ??= { files: [], lists: {} });
+          r.lists[String(a.name)] = String(a.text);
+          return `C:\\Users\\Bruno\\AppData\\Local\\Snip\\raster\\${id}\\${String(a.name)}`;
+        }
+        case "discard_raster":
+          return null;
         case "files_exist":
           return (a.paths as string[]).map((p) => !/movido/i.test(p));
         case "reveal_in_folder":

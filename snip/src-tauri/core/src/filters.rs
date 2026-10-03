@@ -166,16 +166,40 @@ pub fn zoom_filters(keys: &[ZoomKey], canvas: &Canvas) -> Vec<String> {
 }
 
 /// Superposiciones sobre la secuencia: devuelve la etiqueta del resultado.
+///
+/// La capa de "decoración" (textos, subtítulos, logos) la rasteriza el frontend
+/// con el mismo código del preview y llega como una lista ffconcat de PNG que
+/// cubre todo el timeline desde 0; acá se recorta a la ventana exportada.
 pub fn apply_overlays(
-    _g: &mut Graph,
-    _inputs: &mut Inputs,
+    g: &mut Graph,
+    inputs: &mut Inputs,
     _p: &Project,
-    _raster: Option<&crate::compile::RasterInputs>,
+    raster: Option<&crate::compile::RasterInputs>,
     video: &str,
-    _base: f64,
-    _seq_dur: f64,
+    base: f64,
+    seq_dur: f64,
 ) -> Result<String, AppError> {
-    Ok(video.to_string())
+    let Some(r) = raster else {
+        return Ok(video.to_string());
+    };
+    let mut cur = video.to_string();
+    if let Some(decor) = &r.decor {
+        let k = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], decor);
+        let d = g.label("dec");
+        g.add(
+            &[&format!("{k}:v:0")],
+            &format!(
+                "format=rgba,trim=start={}:duration={},setpts=PTS-STARTPTS",
+                crate::compile::num(base),
+                crate::compile::num(seq_dur + 1.0)
+            ),
+            &d,
+        );
+        let out = g.label("ov");
+        g.add(&[&cur, &d], "overlay=format=auto", &out);
+        cur = out;
+    }
+    Ok(cur)
 }
 
 #[cfg(test)]
@@ -238,6 +262,20 @@ mod tests {
         assert_eq!(f[0], "vflip");
         assert_eq!(f[1], "format=gbrap");
         assert!(f[2].starts_with("colorchannelmixer="));
+    }
+
+    #[test]
+    fn decor_layer_is_trimmed_to_the_window() {
+        let p = crate::testutil::sample_project();
+        let mut g = Graph::new();
+        let mut inputs = Inputs::new();
+        assert_eq!(apply_overlays(&mut g, &mut inputs, &p, None, "v", 0.0, 5.0).unwrap(), "v");
+        let r = crate::compile::RasterInputs { decor: Some("/tmp/r/decor.ffconcat".into()), ..Default::default() };
+        let out = apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 2.5, 4.0).unwrap();
+        assert_eq!(inputs.list[0], vec!["-f", "concat", "-safe", "0", "-i", "/tmp/r/decor.ffconcat"]);
+        let f = g.build();
+        assert!(f.contains("[0:v:0]format=rgba,trim=start=2.500000:duration=5.000000,setpts=PTS-STARTPTS[dec"), "{f}");
+        assert!(f.contains("overlay=format=auto[") && f.ends_with(&format!("[{out}]")), "{f}");
     }
 
     #[test]
