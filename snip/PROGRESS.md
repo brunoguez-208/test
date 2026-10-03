@@ -12,8 +12,8 @@ se corta, se retoma desde acá.
 - [x] **Tanda 2** — imagen, texto y efectos (instalador final generado)
 - [x] **Actualización 2.1 — tanda A** (grabaciones NVIDIA, ventana, portapapeles, imagen,
       audio, pistas, proyecto/versiones/plantillas) — instalador `Snip_2.1.0-tandaA_x64-setup.exe`
-- [ ] **Actualización 2.1 — tanda B** (biblioteca, visor de origen, rampas, chroma, presets,
-      máscaras, herramientas automáticas, sonidos)
+- [x] **Actualización 2.1 — tanda B** (biblioteca, visor de origen, rampas, chroma, presets,
+      máscaras, herramientas automáticas, sonidos) — instalador final `Snip_2.1.0_x64-setup.exe`
 
 ## Decisiones tomadas
 
@@ -338,7 +338,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B6. Máscaras
 - [x] B7. Herramientas automáticas (jugadas, silencios, beats)
 - [x] B8. Pack de sonidos (CC0 / sintetizados)
-- [ ] Cierre: tests completos, instalador final, resumen y checklist manual
+- [x] Cierre: tests completos, instalador final, resumen y checklist manual
 
 ### Notas de B1 (biblioteca de medios)
 - Panel izquierdo (botón en la barra de título): todos los medios del proyecto con miniatura,
@@ -440,3 +440,33 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Tests: Rust (lectura de WAV, que el pack esté y cada archivo figure en la licencia),
   integración (el impacto suena exactamente donde se puso al exportar) y Playwright
   (`sounds.spec.ts`).
+
+### Cierre de la tanda B
+- Rust: 166 unit + integración (6 audio, 19 FFmpeg, 9 NVIDIA, 21 proyectos) en verde;
+  `cargo clippy --all-targets` (core, y app para Windows) sin avisos; `tsc -b` limpio.
+- Vitest 143; Playwright 86 (chromium + paridad de video y de audio + rendimiento), 4 workers.
+  Paridad SSIM nueva: rampas ≥ 0,986, chroma ≥ 0,988, efectos ≥ 0,978, máscaras ≥ 0,969.
+- Un test viejo de capas fallaba solo con carga (leía la manija mientras el bloque se animaba):
+  ahora espera a que quede quieto.
+- Instalador `Snip_2.1.0_x64-setup.exe` (63,4 MB, SHA-256 `c437fff8…54763`) en la rama
+  `instaladores`; el de la tanda A pasó a `anteriores/`. Incluye `sfx/` con la licencia CC0.
+
+### Checklist manual (5 minutos, en Windows)
+1. Instalar sobre la versión anterior: abre, conserva proyectos y ajustes.
+2. Grabación real de NVIDIA (ShadowPlay, idealmente HEVC/120 fps con dos pistas): abrirla,
+   cortar dos tramos, exportar MP4 y reproducir el resultado (imagen, las dos voces mezcladas,
+   duración correcta).
+3. Ventana: maximizar, restaurar, Win+← / Win+→ (Snap) y el menú de Snap sobre el botón de
+   maximizar: un solo juego de botones, sin saltos ni bordes raros.
+4. "Mejorar voz" con micrófono: grabar 20 s hablando con ruido de fondo (ventilador), ponerlo
+   en una pista de audio, activar "Mejorar voz" y comparar escuchando en preview y exportado.
+5. Biblioteca y visor: importar 3 archivos al panel, doble clic en uno, marcar I/O e
+   "Insertar en el playhead".
+6. Rampa "Cámara lenta en el medio" sobre un clip con "Mantener tono": que el preview (cuando
+   termina "Aplicando la rampa") y el exportado se vean y suenen igual.
+7. PiP con pantalla verde: gotero sobre el fondo, ajustar similitud; máscara en círculo con
+   borde suave sobre la cámara.
+8. Un "Zoom punch" y un "Flash" en un momento fuerte; "Detectar jugadas" y "Buscar silencios"
+   → "Cortar" → Ctrl+Z.
+9. Agregar música → "Marcar beats" y mover un clip con el imán: se pega a los beats.
+10. Biblioteca → Sonidos: pasar el mouse (se escuchan) y arrastrar "Whoosh" a una pista.
