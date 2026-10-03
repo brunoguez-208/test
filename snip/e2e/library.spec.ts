@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { open } from "./helpers";
+import { open, settled } from "./helpers";
 
 // Biblioteca de medios: importar, buscar, ordenar, scrub, "en uso", arrastrar
 // a una pista, soltar del Explorador sobre el panel y archivos que faltan.
@@ -57,14 +57,24 @@ test("importar, buscar, ordenar, scrub y arrastrar a una pista", async ({ page }
 test("soltar del Explorador sobre la biblioteca y vincular un archivo que falta", async ({ page }) => {
   await open(page);
   await page.getByTestId("toggle-library").click();
-  await page.waitForTimeout(500); // el panel termina de entrar
+  await settled(page, "library");
   await page.evaluate(async () => {
-    const r = document.querySelector("[data-testid='lib-list']")!.getBoundingClientRect();
+    // Espera a que el panel termine de entrar (bajo carga la animación tarda).
+    let r = document.querySelector("[data-testid='lib-list']")!.getBoundingClientRect();
+    for (let i = 0; i < 100 && (r.left < 0 || i < 2); i++) {
+      await new Promise((ok) => setTimeout(ok, 50));
+      const n = document.querySelector("[data-testid='lib-list']")!.getBoundingClientRect();
+      if (n.left === r.left && n.left >= 0) break;
+      r = n;
+    }
     const pos = { x: r.left + 40, y: r.top + 40 };
+    const hit = document.elementFromPoint(pos.x, pos.y) as HTMLElement | null;
+    (window as unknown as { __hit: string }).__hit = `${JSON.stringify(pos)} ${hit?.outerHTML.slice(0, 120)} lib=${!!hit?.closest("[data-library]")}`;
     await window.__snipMock.dragEnter(["C:\\Users\\Bruno\\Videos\\Clip 5s.mp4"]);
     await window.__snipMock.dragOver(pos);
     await window.__snipMock.drop(["C:\\Users\\Bruno\\Videos\\Clip 5s.mp4"], pos);
   });
   await expect(page.getByTestId("lib-item")).toHaveCount(2);
-  await expect(page.getByTestId("clip")).toHaveCount(1);
+  const hit = await page.evaluate(() => (window as unknown as { __hit: string }).__hit);
+  await expect(page.getByTestId("clip"), hit).toHaveCount(1);
 });

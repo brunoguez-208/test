@@ -51,3 +51,20 @@ export async function project(page: Page) {
   });
 }
 
+
+/** Espera a que un elemento termine de animarse (misma caja dos veces seguidas). */
+export async function settled(page: Page, testId: string) {
+  let last = "";
+  await expect
+    .poll(
+      async () => {
+        const b = await page.getByTestId(testId).boundingBox();
+        const now = b ? `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}` : "";
+        const same = now !== "" && now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [120], timeout: 10_000 },
+    )
+    .toBe(true);
+}

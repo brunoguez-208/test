@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { open, seek } from "./helpers";
+import { open, seek, settled } from "./helpers";
 
 // Visor de origen: doble clic en la biblioteca, I/O en su mini timeline,
 // "Insertar en el playhead" y arrastrar el fragmento a una pista.
@@ -7,9 +7,10 @@ const project = (page: Page) => page.evaluate(() => window.__snipTest.project())
 
 async function openViewer(page: Page) {
   await page.getByTestId("toggle-library").click();
-  await page.waitForTimeout(400);
+  await settled(page, "library");
   await page.getByTestId("lib-item").first().dblclick();
   await expect(page.getByTestId("source-viewer")).toBeVisible();
+  await settled(page, "source-viewer");
 }
 
 async function clickBar(page: Page, f: number) {
