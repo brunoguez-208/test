@@ -4,54 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 const SHOTS = "e2e/screenshots";
 const VIDEO = "C:\\Users\\Bruno\\Videos\\Clip de prueba.mp4";
 
-const tc = (s: string) => {
-  const [h, m, sec, f] = s.split(":").map(Number);
-  return h * 3600 + m * 60 + sec + f / 30;
-};
-
-async function open(page: Page, query = "") {
-  await page.goto(`/?theme=dark${query}`);
-  await expect(page.getByTestId("welcome")).toBeVisible();
-  await page.getByTestId("welcome-open").click();
-  await expect(page.getByTestId("editor")).toBeVisible();
-  await expect(page.getByTestId("clip")).toHaveCount(1);
-  await expect(page.getByTestId("thumb").first()).toBeVisible({ timeout: 10_000 });
-}
-
-/** Pone el foco en la página (no en un input) para que anden los atajos. */
-async function focusBody(page: Page) {
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-}
-
-async function seek(page: Page, seconds: number) {
-  const input = page.getByTestId("current-tc");
-  await input.click();
-  await input.fill(String(seconds));
-  await input.press("Enter");
-  await focusBody(page);
-}
-
-/** Abre el panel de la cola (si no está abierto). */
-async function openQueue(page: Page) {
-  if (!(await page.getByTestId("queue-panel").isVisible())) await page.getByTestId("queue-button").click();
-  await expect(page.getByTestId("queue-panel")).toBeVisible();
-}
-
-async function total(page: Page) {
-  return tc(((await page.getByTestId("total-tc").textContent()) ?? "").replace("/", "").trim());
-}
-
-async function clipIds(page: Page) {
-  return page.getByTestId("clip").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.clipId!));
-}
-
-async function project(page: Page) {
-  // El último autoguardado (o el proyecto que mandó la última exportación).
-  return page.evaluate(() => {
-    const saves = Object.values(window.__snipMock.autosaves);
-    return saves.sort((a, b) => b.project.updatedAt - a.project.updatedAt)[0]?.project ?? null;
-  });
-}
+import { clipIds, focusBody, open, openQueue, project, seek, tc, total } from "./helpers";
 
 test("abrir, ver el editor y exportar con la cola", async ({ page }) => {
   await page.goto("/?theme=dark");
@@ -300,6 +253,7 @@ test("transiciones entre clips y fundido a negro", async ({ page }) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOTS}/10-transicion.png` });
   await page.getByTestId("inspector-tab-video").click();
+  await page.getByTestId("global-fade-in").scrollIntoViewIfNeeded();
   const fi = (await page.getByTestId("global-fade-in").boundingBox())!;
   await page.mouse.click(fi.x + fi.width * 0.2, fi.y + fi.height / 2);
   const p = await project(page);

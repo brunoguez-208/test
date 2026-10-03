@@ -17,7 +17,7 @@ import type { Clip, ExportSettings, MediaRef, Project } from "../project/model";
 import { canvasFps, canvasFpsExpr } from "../project/model";
 import { EditError, addMusic as addMusicOp, addRange, fitCanvas, insertMedia, makeId, newProject } from "../project/ops";
 import { heavySignature, needsHeavy } from "../project/heavy";
-import { totalDuration } from "../project/timeline";
+import { layout, totalDuration } from "../project/timeline";
 import { Player, type SourceResolver } from "../engine/player";
 import {
   activeProject,
@@ -26,6 +26,9 @@ import {
   closeTabState,
   edit,
   editSignature,
+  gestureCancel,
+  gestureEnd,
+  gestureStart,
   isDirty,
   markSaved,
   openTab,
@@ -33,6 +36,7 @@ import {
   pushToast,
   setMissing,
   useEditor,
+  type ImageEdit,
   type ProcState,
 } from "./editor";
 
@@ -742,15 +746,64 @@ let lastProject: Project | null = null;
 let lastActive: string | null = null;
 
 /** Mantiene sincronizados el reproductor, el autoguardado y la etapa pesada. */
+// ------------------------- Edición sobre el preview -------------------------
+
+function sameEdit(a: ImageEdit | null, b: ImageEdit | null): boolean {
+  return !!a && !!b && a.mode === b.mode && a.clipId === b.clipId;
+}
+
+/** Lleva el playhead adentro del clip (al keyframe, si se edita uno). */
+function seekIntoClip(e: ImageEdit) {
+  const p = activeProject();
+  if (!p) return;
+  const i = p.clips.findIndex((c) => c.id === e.clipId);
+  if (i < 0) return;
+  const span = layout(p.clips)[i];
+  const pl = player();
+  pl.pause();
+  if (e.mode === "zoom") {
+    const k = p.clips[i].video.zoom.find((z) => z.id === e.keyId);
+    if (k) pl.seek(Math.min(span.end - pl.frameDur(), span.start + k.t));
+    return;
+  }
+  const t = useEditor.getState().time;
+  if (t < span.start || t >= span.end) pl.seek(span.start + Math.min(0.5, span.duration / 2));
+}
+
+/**
+ * Entra o sale de la edición sobre el preview. Todo un recorte es un solo
+ * paso de deshacer: "done" lo confirma y "cancel" lo descarta.
+ */
+export function setImageEdit(next: ImageEdit | null, how: "done" | "cancel" = "done") {
+  const prev = useEditor.getState().imageEdit;
+  if (prev?.mode === "crop" && !sameEdit(prev, next)) {
+    if (how === "cancel") gestureCancel();
+    else gestureEnd();
+  }
+  if (next?.mode === "crop" && !sameEdit(prev, next)) gestureStart();
+  if (next) seekIntoClip(next);
+  useEditor.setState({ imageEdit: next });
+  const pl = player();
+  pl.override = next ? { clipId: next.clipId, noCrop: next.mode === "crop", noZoom: true } : null;
+  pl.requestRender();
+}
+
+let heavyTimer = 0;
+
 export function startSync() {
   return useEditor.subscribe((s) => {
     const tab = activeTab(s);
     const p = tab?.history.present ?? null;
     if (s.active !== lastActive) {
+      if (s.imageEdit) queueMicrotask(() => setImageEdit(null));
       lastActive = s.active;
       lastProject = p;
       syncPlayer();
       return;
+    }
+    // Si el clip que se editaba sobre el preview ya no está (deshacer, borrar), se sale.
+    if (s.imageEdit && (!p || !p.clips.some((c) => c.id === s.imageEdit!.clipId))) {
+      queueMicrotask(() => setImageEdit(null, "cancel"));
     }
     if (p && p !== lastProject) {
       const prev = lastProject;
@@ -762,7 +815,9 @@ export function startSync() {
       }
       if (!prev || editSignature(prev) !== editSignature(p)) {
         player().setProject(p);
-        scheduleHeavy();
+        // Con un pequeño respiro: arrastrar un slider (ruido, estabilización) no relanza el proceso a cada paso.
+        window.clearTimeout(heavyTimer);
+        heavyTimer = window.setTimeout(scheduleHeavy, 450);
       }
       // La vista (zoom, scroll) solo se autoguarda: no cambia el preview.
       scheduleAutosave(p.id);

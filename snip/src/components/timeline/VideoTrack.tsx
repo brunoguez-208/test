@@ -15,7 +15,8 @@ import { moveClip, snap, snapPoints, trimClip } from "../../project/ops";
 import { needsHeavy } from "../../project/heavy";
 import { basename } from "../../lib/files";
 import { edit, gestureEnd, gestureStart, setSelection, useEditor, activeTab } from "../../store/editor";
-import { player, quantizeThumbTime, requestThumbs, thumbKey } from "../../store/controller";
+import { player, quantizeThumbTime, requestThumbs, setImageEdit, thumbKey } from "../../store/controller";
+import { updateZoomKey } from "../../project/imageOps";
 import { PAD_X, VIDEO_H, tToX, useDrag, type Geo } from "./geometry";
 import { ProgressRing } from "../ui/Progress";
 
@@ -128,6 +129,9 @@ const ClipView = memo(function ClipView({ clip, order, media, span, geo, selecte
         )}
       </AnimatePresence>
       <div className="tl-clip-outline pointer-events-none absolute inset-0 rounded-[6px]" />
+      {clip.video.zoom.map((k) => (
+        <ZoomDiamond key={k.id} clipId={clip.id} keyId={k.id} t={k.t} pps={geo.pps} duration={span.duration} />
+      ))}
       {clip.kind === "video" && (
         <>
           <div className="tl-trim tl-trim-in absolute inset-y-0 left-0 w-2 cursor-ew-resize" onPointerDown={onTrimDown("in")} data-testid="trim-in" />
@@ -137,6 +141,46 @@ const ClipView = memo(function ClipView({ clip, order, media, span, geo, selecte
     </motion.div>
   );
 });
+
+/** Keyframe de zoom en el clip: click lo elige (y lleva el playhead), arrastrar lo mueve. */
+function ZoomDiamond({ clipId, keyId, t, pps, duration }: { clipId: string; keyId: number; t: number; pps: number; duration: number }) {
+  const selected = useEditor((s) => s.imageEdit?.mode === "zoom" && s.imageEdit.clipId === clipId && s.imageEdit.keyId === keyId);
+  const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const x0 = e.clientX;
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 3) return;
+      if (!moved) {
+        moved = true;
+        gestureStart();
+      }
+      edit((p) => updateZoomKey(p, clipId, keyId, { t: Math.min(duration, Math.max(0, t + dx / pps)) }));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (moved) gestureEnd();
+      useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+      setImageEdit({ mode: "zoom", clipId, keyId });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <span
+      className={`tl-key ${selected ? "is-selected" : ""}`}
+      style={{ left: Math.min(duration, Math.max(0, t)) * pps }}
+      onPointerDown={onDown}
+      role="button"
+      aria-label="Keyframe de zoom"
+      data-testid="tl-zoom-key"
+    />
+  );
+}
 
 function fmtSpeed(s: number): string {
   const r = Math.round(s * 100) / 100;

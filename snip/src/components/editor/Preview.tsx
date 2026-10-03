@@ -10,6 +10,8 @@ import { addVideosWithDialog, player, relinkMedia } from "../../store/controller
 import { Button } from "../ui/Button";
 import { ProgressRing } from "../ui/Progress";
 import { Tooltip } from "../ui/Tooltip";
+import { clipGeometry } from "../../project/geometry";
+import { CropEditor, ZoomEditor } from "./ImageEditors";
 
 /** Preview: canvas WebGL encajado con la proporción del lienzo. */
 export function Preview({ project }: { project: Project }) {
@@ -22,7 +24,13 @@ export function Preview({ project }: { project: Project }) {
   const heavy = useEditor((s) => s.heavy);
   const proxies = useEditor((s) => s.proxies);
   const [glFailed, setGlFailed] = useState(false);
-  const aspect = project.canvas.width / project.canvas.height;
+  const imageEdit = useEditor((s) => s.imageEdit);
+  const editClip = imageEdit ? project.clips.find((c) => c.id === imageEdit.clipId) ?? null : null;
+  const editMedia = editClip ? project.media.find((m) => m.id === editClip.mediaId) ?? null : null;
+  // Recortando: el preview muestra el cuadro completo del clip (con su proporción).
+  const cropping = imageEdit?.mode === "crop" && editClip && editMedia;
+  const full = cropping ? clipGeometry(editClip.video, editMedia) : null;
+  const aspect = full ? full.fullWidth / full.fullHeight : project.canvas.width / project.canvas.height;
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -67,7 +75,9 @@ export function Preview({ project }: { project: Project }) {
   return (
     <div ref={box} className="relative flex min-h-0 flex-1 items-center justify-center" data-testid="player">
       <div className="video-well group relative overflow-hidden rounded-[8px]" style={{ width: size.w, height: size.h }}>
-        <canvas ref={canvas} className="absolute inset-0 h-full w-full" onClick={() => player().toggle()} data-testid="preview-canvas" />
+        <canvas ref={canvas} className="absolute inset-0 h-full w-full" onClick={() => !imageEdit && player().toggle()} data-testid="preview-canvas" />
+        {cropping && <CropEditor clip={editClip} media={editMedia} />}
+        {imageEdit?.mode === "zoom" && editClip && <ZoomEditor clip={editClip} keyId={imageEdit.keyId} />}
 
         {glFailed && (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
@@ -145,7 +155,7 @@ export function Preview({ project }: { project: Project }) {
           </AnimatePresence>
         </div>
 
-        {!playing && !empty && !isMissing && (
+        {!playing && !empty && !isMissing && !imageEdit && (
           <motion.button
             type="button"
             aria-label="Reproducir"

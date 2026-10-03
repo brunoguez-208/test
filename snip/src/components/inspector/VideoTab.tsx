@@ -4,14 +4,41 @@ import { totalDuration } from "../../project/timeline";
 import { formatFps } from "../../lib/timecode";
 import { edit, gestureEnd, gestureStart } from "../../store/editor";
 import { RangeSlider } from "../ui/RangeSlider";
+import { basename } from "../../lib/files";
 import { Field, Section, fmtNum } from "./Field";
+import { useTargetClip } from "./useTarget";
+import { FramingSection } from "./video/FramingSection";
+import { ZoomSection } from "./video/ZoomSection";
+import { ColorSection } from "./video/ColorSection";
+import { LooksSection } from "./video/LooksSection";
+import { EnhanceSection } from "./video/EnhanceSection";
 
 export function VideoTab({ project }: { project: Project }) {
   const total = totalDuration(project);
   const max = Math.max(0.1, Math.min(10, total / 2));
   const f = project.fades;
+  const { clip, index, explicit } = useTargetClip(project);
+  const media = clip ? project.media.find((m) => m.id === clip.mediaId) : null;
   return (
     <div className="flex flex-col gap-6" data-testid="video-tab">
+      {clip && (
+        <>
+          <div className="min-w-0">
+            <p className="t-body-strong truncate" title={media?.path}>
+              {clip.kind === "freeze" ? "Cuadro congelado" : media ? basename(media.path) : "Clip"}
+            </p>
+            <p className="t-caption tabular text-[var(--text-secondary)]">
+              Imagen del clip {index + 1} de {project.clips.length}
+              {!explicit && " · bajo el playhead"}
+            </p>
+          </div>
+          <FramingSection project={project} clip={clip} />
+          <ZoomSection project={project} clip={clip} index={index} />
+          <ColorSection clip={clip} />
+          <LooksSection clip={clip} />
+          <EnhanceSection clip={clip} />
+        </>
+      )}
       <Section title="Fundido a negro">
         <Field label="Al inicio" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{f.fadeIn ? `${fmtNum(f.fadeIn)} s` : "No"}</span>}>
           <RangeSlider

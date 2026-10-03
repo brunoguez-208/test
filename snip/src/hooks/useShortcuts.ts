@@ -8,6 +8,7 @@ import {
   openWithDialog,
   player,
   saveProject,
+  setImageEdit,
   switchTab,
 } from "../store/controller";
 import { addMarker, adjacentMarker, deleteClips, deleteRange, splitAt } from "../project/ops";
@@ -35,6 +36,19 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
   const p = activeProject(st);
   if (st.phase !== "editor" || !tab || !p) return false;
   if (repeat && ["togglePlay", "export", "shuttle", "split", "marker", "save", "closeTab", "delete"].includes(action.type)) return true;
+  // Recorte / zoom sobre el preview: Esc sale; deshacer descarta el recorte;
+  // cualquier otra edición primero lo confirma.
+  if (st.imageEdit) {
+    if (action.type === "escape") {
+      setImageEdit(null, st.imageEdit.mode === "crop" ? "cancel" : "done");
+      return true;
+    }
+    if (st.imageEdit.mode === "crop" && (action.type === "undo" || action.type === "redo")) {
+      setImageEdit(null, "cancel");
+      return true;
+    }
+    if (["split", "delete", "marker", "undo", "redo", "export", "save", "closeTab"].includes(action.type)) setImageEdit(null);
+  }
   const pl = player();
   const t = st.time;
   switch (action.type) {
