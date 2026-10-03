@@ -286,7 +286,15 @@ export interface BlurLayer {
   rect: Rect;
   keys: RectKey[];
 }
-export type OverlayContent = TextLayer | ImageLayer | PipLayer | BlurLayer;
+export type EffectKind = "shake" | "zoomPunch" | "flash" | "glitch" | "vignette";
+/** Efecto de un clic sobre todo el cuadro, como bloque en la pista de capas. */
+export interface EffectLayer {
+  type: "effect";
+  kind: EffectKind;
+  /** 0..1 */
+  intensity: number;
+}
+export type OverlayContent = TextLayer | ImageLayer | PipLayer | BlurLayer | EffectLayer;
 export type Overlay = { id: string; start: number; duration: number; lane: number } & OverlayContent;
 
 // ---------------------------------- Música ----------------------------------

@@ -8,6 +8,7 @@ import { activeAt, layout, sourceTime, totalDuration, type Span } from "../proje
 import { dbToGain, resumeAudio, setGain, setMasterVolume, setVoice } from "./audio";
 import { audioTrack, effectiveFades, keyGain, trackGain, voiceParams, type VoiceParams } from "./audioFx";
 import { chromaUniforms } from "./chroma";
+import { effectDraws } from "./fx";
 import { Renderer, type BlurDraw, type ClipDraw, type FrameDraw, type PipDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
@@ -708,6 +709,8 @@ export class Player {
       transition: !hidden && f.b !== null && kind ? { kind, progress: f.progress } : null,
       fade: this.globalFade(),
       ...this.zoneDraws(this.renderW, this.renderH),
+      effects: effectDraws(p, this.time),
+      canvasSize: [p.canvas.width, p.canvas.height],
       layers: this.decorLayers(this.renderW, this.renderH),
     };
   }

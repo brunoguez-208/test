@@ -933,6 +933,7 @@ kbd.kbd {
 .tl-overlay-image { background: color-mix(in srgb, #14b8a6 34%, var(--control-fill)); }
 .tl-overlay-video { background: color-mix(in srgb, #3b82f6 34%, var(--control-fill)); }
 .tl-overlay-blur { background: color-mix(in srgb, #94a3b8 34%, var(--control-fill)); }
+.tl-overlay-effect { background: color-mix(in srgb, #f59e0b 34%, var(--control-fill)); }
 .tl-cue { background: color-mix(in srgb, #f59e0b 30%, var(--control-fill)); }
 .tl-overlay:hover { border-color: var(--stroke-control-strong, rgb(255 255 255 / 0.25)); }
 .tl-overlay.is-selected { border-color: var(--accent-fill); box-shadow: 0 0 0 1px var(--accent-fill), 0 0 10px color-mix(in srgb, var(--accent-fill) 45%, transparent); }

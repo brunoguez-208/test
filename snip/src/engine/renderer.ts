@@ -1,9 +1,10 @@
 // Renderer WebGL2 del preview: dibuja cada clip activo en un FBO del tamaño del
 // lienzo, resuelve la transición y copia al canvas con el fundido global.
 
-import { BLIT_FRAG, BLUR_H_FRAG, BLUR_V_FRAG, CLIP_FRAG, LAYER_FRAG, OVERLAY_FRAG, PIP_FRAG, PIXELATE_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
+import { BLIT_FRAG, BLUR_H_FRAG, BLUR_V_FRAG, CLIP_FRAG, EFFECT_FRAG, LAYER_FRAG, OVERLAY_FRAG, PIP_FRAG, PIXELATE_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
 import type { ColorPipeline } from "./color";
 import type { ChromaUniforms } from "./chroma";
+import type { EffectDraw } from "./fx";
 
 export interface ClipDraw {
   source: TexImageSource;
@@ -49,6 +50,10 @@ export interface FrameDraw {
   /** Zonas desenfocadas y PiP (en ese orden, antes de las capas). */
   blurs?: BlurDraw[];
   pips?: PipDraw[];
+  /** Efectos sobre todo el cuadro (después del PiP, antes de las capas). */
+  effects?: EffectDraw[];
+  /** Tamaño del lienzo de la exportación (para el glitch en píxeles enteros). */
+  canvasSize?: [number, number];
   /** Capas RGBA del tamaño del lienzo, en orden. `key` cambia cuando cambia el contenido. */
   layers: { source: TexImageSource; key: string }[];
 }
@@ -89,6 +94,7 @@ export class Renderer {
   private pixProg: Program;
   private pipProg: Program;
   private layerProg: Program;
+  private effectProg: Program;
   private pipTex: WebGLTexture[] = [];
   private shadowTex: WebGLTexture[] = [];
   private shadowKeys: string[] = [];
@@ -122,12 +128,13 @@ export class Renderer {
     this.pixProg = this.program(PIXELATE_FRAG, ["uSize", "uBase", "uZone", "uN"]);
     this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius", "uKey", "uKeyOn", "uSim", "uBlend", "uDespill", "uSpill"]);
     this.layerProg = this.program(LAYER_FRAG, ["uSize", "uLayer"]);
+    this.effectProg = this.program(EFFECT_FRAG, ["uSize", "uSrc", "uMode", "uWin", "uCanvas", "uK", "uI", "uTint", "uAlpha", "uVignette"]);
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    for (const p of [this.clipProg, this.transProg, this.blitProg, this.overlayProg, this.blurHProg, this.blurVProg, this.pixProg, this.pipProg, this.layerProg]) {
+    for (const p of [this.clipProg, this.transProg, this.blitProg, this.overlayProg, this.blurHProg, this.blurVProg, this.pixProg, this.pipProg, this.layerProg, this.effectProg]) {
       const loc = gl.getAttribLocation(p.prog, "aPos");
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -368,6 +375,35 @@ export class Renderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disable(gl.BLEND);
     });
+    // Efectos sobre todo el cuadro: cada uno lee el resultado y escribe en otro FBO.
+    for (const e of f.effects ?? []) {
+      const dst = this.targets.find((t) => t !== result && t !== ta) ?? (result === tc ? tb : tc);
+      const P = this.effectProg;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+      gl.viewport(0, 0, renderW, renderH);
+      gl.useProgram(P.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, result.tex);
+      gl.uniform2f(P.loc.uSize, renderW, renderH);
+      gl.uniform1i(P.loc.uSrc, 0);
+      const [cw, ch] = f.canvasSize ?? [renderW, renderH];
+      gl.uniform2f(P.loc.uCanvas, cw, ch);
+      if (e.mode === "window") {
+        gl.uniform1i(P.loc.uMode, 0);
+        gl.uniform3f(P.loc.uWin, e.z, e.cx, e.cy);
+      } else if (e.mode === "glitch") {
+        gl.uniform1i(P.loc.uMode, 1);
+        gl.uniform1f(P.loc.uK, e.k);
+        gl.uniform1f(P.loc.uI, e.i);
+      } else {
+        gl.uniform1i(P.loc.uMode, 2);
+        gl.uniform3f(P.loc.uTint, ...e.color);
+        gl.uniform1f(P.loc.uAlpha, e.alpha);
+        gl.uniform1f(P.loc.uVignette, e.vignette ? 1 : 0);
+      }
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      result = dst;
+    }
     // Capas (texto, subtítulos, logos): alternando entre dos FBO.
     for (const layer of f.layers) {
       const dst = this.targets.find((t) => t !== result && t !== ta) ?? (result === tc ? tb : tc);

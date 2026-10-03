@@ -1,6 +1,7 @@
 // Superposiciones (texto, logo/imagen) y subtítulos: operaciones puras.
 
-import type { BlurLayer, Cue, ImageLayer, MediaRef, Overlay, OverlayContent, PipLayer, Project, Rect, RectKey, SubtitleStyle, TextLayer } from "./model";
+import type { BlurLayer, Cue, EffectKind, ImageLayer, MediaRef, Overlay, OverlayContent, PipLayer, Project, Rect, RectKey, SubtitleStyle, TextLayer } from "./model";
+import { EFFECTS } from "./effects";
 import { addMedia, makeId } from "./ops";
 import { totalDuration } from "./timeline";
 import { TEXT_TEMPLATES, type TextTemplate } from "./templates";
@@ -189,6 +190,14 @@ export function addBlurKey(p: Project, id: string, u: number): Project {
 
 export function removeBlurKeys(p: Project, id: string): Project {
   return updateOverlay(p, id, (o) => (o.type === "blur" ? { ...o, rect: rectAt(o, 0), keys: [] } : o));
+}
+
+// --------------------------------- Efectos ---------------------------------
+
+/** Efecto de un clic en el playhead (con su duración típica). */
+export function addEffect(p: Project, kind: EffectKind, at: number, duration?: number): [Project, string] {
+  const d = duration ?? EFFECTS.find((e) => e.kind === kind)?.duration ?? 0.6;
+  return addOverlay(p, { type: "effect", kind, intensity: 0.7 }, at, d);
 }
 
 // ------------------------------- Picture-in-picture -------------------------------

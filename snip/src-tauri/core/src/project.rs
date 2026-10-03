@@ -572,6 +572,26 @@ pub enum OverlayContent {
     Video(PipLayer),
     /// Desenfocar o pixelar una zona.
     Blur(BlurLayer),
+    /// Efecto de un clic sobre todo el cuadro (temblor, zoom, flash, glitch, viñeta).
+    Effect(EffectLayer),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EffectKind {
+    Shake,
+    ZoomPunch,
+    Flash,
+    Glitch,
+    Vignette,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectLayer {
+    pub kind: EffectKind,
+    /// 0..1
+    pub intensity: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

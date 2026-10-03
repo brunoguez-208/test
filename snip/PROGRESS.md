@@ -334,7 +334,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B2. Visor de origen
 - [x] B3. Rampas de velocidad
 - [x] B4. Chroma key
-- [ ] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
+- [x] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
 - [ ] B6. Máscaras
 - [ ] B7. Herramientas automáticas (jugadas, silencios, beats)
 - [ ] B8. Pack de sonidos (CC0 / sintetizados)
@@ -382,3 +382,18 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Paridad SSIM 0,988–0,991 (verde con sujeto en movimiento, borde suave y despill); el control
   sin llave cae por debajo de 0,9. Test de integración con píxeles (fondo azul visible, sujeto
   rojo intacto), Vitest (`engine/chroma.test.ts`) y Playwright (`chroma.spec.ts`).
+
+### Notas de B5 (efectos de un clic)
+- Pestaña Video → "Efectos": Temblor, Zoom punch, Flash, Glitch y Viñeta. Cada clic agrega un
+  bloque en el playhead (duración típica: 0,6 / 0,5 / 0,35 / 0,6 / 3 s) en la pista de capas;
+  se mueve, estira y borra como cualquier capa, con intensidad y duración en el inspector.
+- Se aplican sobre todo el cuadro después del PiP y antes de textos y subtítulos (los títulos
+  no tiemblan). Fórmulas compartidas `core/src/fx.rs` ↔ `src/engine/fx.ts`:
+  temblor y zoom punch con `perspective` (la misma ventana que el zoom con keyframes), glitch
+  con `geq` en aritmética entera (bandas corridas + separación RGB, 15 cambios por segundo),
+  flash y viñeta como una capa de color con alfa calculado en una grilla 1/8 y escalada.
+- El tiempo de cada efecto se cuenta en cuadros desde el primer cuadro del bloque (no con los
+  tiempos del archivo, que en WebM vienen truncados al milisegundo).
+- Paridad SSIM ≥ 0,978 en los cinco (inicios fuera de la grilla de cuadros a propósito),
+  integración con píxeles (flash blanco en el pico, esquinas oscuras con la viñeta),
+  Vitest (`engine/fx.test.ts`) y Playwright (`effects.spec.ts`).

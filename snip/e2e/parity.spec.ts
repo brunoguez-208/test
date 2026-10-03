@@ -12,7 +12,7 @@ import type { MediaRef, Project, TransitionKind } from "../src/project/model";
 import { canvasFps } from "../src/project/model";
 import { fitCanvas, insertMedia, newProject, setTransition, updateClip } from "../src/project/ops";
 import { LOOKS } from "../src/engine/color";
-import { addBlur, addImage, addPip, addText, setCues, updateOverlay } from "../src/project/overlayOps";
+import { addBlur, addEffect, addImage, addPip, addText, setCues, updateOverlay } from "../src/project/overlayOps";
 import { layout } from "../src/project/timeline";
 import { rampPreset } from "../src/project/ramp";
 
@@ -321,4 +321,26 @@ test("paridad: chroma key en un PiP (verde con sujeto, despill y borde suave)", 
   const plain = updateOverlay(p, pip, (o) => (o.type === "video" ? { ...o, chroma: null } : o));
   const [prev] = await previewFrames(page, plain, [60], "chroma-sin");
   expect(compare(prev, keyed)).toBeLessThan(0.9);
+});
+
+test("paridad: efectos de un clic (temblor, zoom punch, flash, glitch, viñeta)", async ({ page }) => {
+  test.setTimeout(400_000);
+  let p = base([["a.webm", 0, 4], ["b.webm", 0, 4]]);
+  // Inicios fuera de la grilla de cuadros a propósito.
+  const plan: [Parameters<typeof addEffect>[1], number, number, number][] = [
+    ["shake", 0.21, 0.6, 1],
+    ["zoomPunch", 1.07, 0.5, 0.9],
+    ["flash", 2.013, 0.4, 0.8],
+    ["glitch", 3.1, 0.6, 0.8],
+    ["vignette", 4.25, 2, 1],
+  ];
+  const frames: Record<string, number> = {};
+  for (const [kind, at, d, i] of plan) {
+    let id: string;
+    [p, id] = addEffect(p, kind, at, d);
+    p = updateOverlay(p, id, (o) => (o.type === "effect" ? { ...o, intensity: i } : o));
+    for (const f of [0.15, 0.5, 0.85]) frames[`${kind}-${Math.round(f * 100)}`] = Math.ceil((at + d * f) * 30);
+  }
+  frames["sin-efecto"] = 200;
+  await check(page, p, frames, "efectos", 0.95, true);
 });

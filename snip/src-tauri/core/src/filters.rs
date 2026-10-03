@@ -315,6 +315,50 @@ pub fn apply_overlays(
         cur = out;
     }
 
+    // 2b) Efectos de un clic sobre todo el cuadro (debajo de textos y subtítulos).
+    let fpsf = p.canvas.fps();
+    for o in ordered.iter().filter(|o| matches!(o.content, OverlayContent::Effect(_))) {
+        let OverlayContent::Effect(e) = &o.content else { continue };
+        let Some((s0, s1)) = visible_part(o.start, o.start + o.duration, base, seq_dur) else { continue };
+        let (g0, g1) = (s0 - base, s1 - base);
+        let g_first = crate::fx::first_frame(g0, fpsf);
+        let tau0 = g_first + base - crate::fx::first_frame(o.start, fpsf);
+        let enable = format!("enable='between(t,{},{})'", num(g0), num(g1 - EPS_T));
+        if let Some(chain) = crate::fx::segment_filters(e, o.duration, tau0, fpsf) {
+            let (a, b) = (g.label("fa"), g.label("fb"));
+            g.add(&[&cur], "split", &format!("{a}][{b}"));
+            let fe = g.label("fe");
+            g.add(&[&b], &format!("trim=start={}:end={},{chain},format=yuv420p", num(g0), num(g1)), &fe);
+            let out = g.label("ov");
+            g.add(&[&a, &fe], &format!("overlay=eof_action=pass:format=auto:{enable}"), &out);
+            cur = out;
+        } else {
+            let tau = format!("(N/{}+{})", num(fpsf), num(tau0));
+            let Some((color, alpha)) = crate::fx::tint_alpha(e, o.duration, &tau) else { continue };
+            let frames = ((g1 - g_first) * fpsf - 1e-6).ceil().max(1.0);
+            let (gw, gh) = (p.canvas.width.div_ceil(crate::fx::TINT_GRID), p.canvas.height.div_ceil(crate::fx::TINT_GRID));
+            let src = g.label("ts");
+            g.source(&format!("color=c={color}:s={gw}x{gh}:r={fps}:d={}", num(frames / fpsf)), &src);
+            let rgb = if color == "white" { "255" } else { "0" };
+            let tl = g.label("tl");
+            g.add(
+                &[&src],
+                &format!(
+                    "format=rgba,settb=AVTB,setpts=PTS+{}/TB,geq=r={rgb}:g={rgb}:b={rgb}:a='{alpha}',scale={}:{}:flags=bilinear",
+                    // Medio cuadro antes: el video puede traer tiempos truncados al ms y
+                    // `overlay` tomaría el cuadro anterior del tinte.
+                    num(g_first - 0.5 / fpsf),
+                    p.canvas.width,
+                    p.canvas.height
+                ),
+                &tl,
+            );
+            let out = g.label("ov");
+            g.add(&[&cur, &tl], &format!("overlay=eof_action=pass:format=auto:{enable}"), &out);
+            cur = out;
+        }
+    }
+
     // 3) Decoración (textos, subtítulos, logos).
     if let Some(decor) = raster.and_then(|r| r.decor.as_ref()) {
         let k = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], decor);

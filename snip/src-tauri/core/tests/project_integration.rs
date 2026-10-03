@@ -684,3 +684,38 @@ fn pip_chroma_key_shows_the_background_and_keeps_the_subject() {
         }
     }
 }
+
+#[test]
+fn effect_blocks_flash_vignette_and_shake_render_where_they_should() {
+    guard!();
+    let r = fx().root.join("fx");
+    std::fs::create_dir_all(&r).unwrap();
+    let gray = r.join("gris.mp4").to_string_lossy().into_owned();
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=0x808080:s=640x360:r=30:d=4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &gray]);
+    let fxo = |id: &str, kind: EffectKind, start: f64, duration: f64| Overlay { id: id.into(), start, duration, lane: 0, content: OverlayContent::Effect(EffectLayer { kind, intensity: 1.0 }) };
+    let mut p = project(vec![media("g", "fx/gris.mp4")], vec![clip("c1", "g", 0.0, 4.0)]);
+    p.overlays.push(fxo("f", EffectKind::Flash, 0.5, 0.5));
+    p.overlays.push(fxo("v", EffectKind::Vignette, 2.0, 1.5));
+    p.overlays.push(fxo("s", EffectKind::Shake, 3.6, 0.3));
+    let o = run(p, "efectos.mp4");
+    let luma = |t: f64, crop: &str| {
+        let out = Command::new(&fx().tools.ffmpeg)
+            .args(["-v", "error", "-ss", &format!("{t}"), "-i", &o.output, "-frames:v", "1", "-vf", &format!("{crop},scale=1:1,format=gray"), "-f", "rawvideo", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        out[0] as i32
+    };
+    let full = "crop=iw:ih:0:0";
+    let corner = "crop=40:40:0:0";
+    let center = "crop=40:40:300:160";
+    let base = luma(0.2, full);
+    // Flash: en el pico (τ = 0,08 s) casi blanco; después vuelve.
+    assert!(luma(0.6, full) > 225, "flash: {}", luma(0.6, full));
+    assert!((luma(1.5, full) - base).abs() < 4, "después del flash");
+    // Viñeta: esquinas oscuras, centro igual.
+    assert!(luma(2.7, corner) < base - 50, "esquina {} vs {base}", luma(2.7, corner));
+    assert!((luma(2.7, center) - base).abs() < 4, "centro");
+    assert!((luma(3.55, corner) - base).abs() < 4, "fuera de la viñeta");
+    assert!((probe(&o.output).duration - 4.0).abs() < 0.1);
+}

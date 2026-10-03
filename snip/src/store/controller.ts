@@ -16,9 +16,9 @@ import {
 import { basename, dirname, isAudio, isProjectFile, isVideo, stem } from "../lib/files";
 import { toAppError, type AppError, type ExportJob, type QueueItem, type RasterSpec } from "../lib/types";
 import { decorSignature, hasDecor, renderDecorSequence, renderZoneAssets, type DecorSequence, type ZoneAssets } from "../engine/raster";
-import { addBlur, addImage, addPip, addText, setCues } from "../project/overlayOps";
+import { addBlur, addEffect, addImage, addPip, addText, setCues } from "../project/overlayOps";
 import { formatSrt, parseSrt } from "../project/srt";
-import type { Clip, ExportSettings, MediaRef, Project } from "../project/model";
+import type { EffectKind, Clip, ExportSettings, MediaRef, Project } from "../project/model";
 import { canvasFps, canvasFpsExpr } from "../project/model";
 import { EditError, addMusic as addMusicOp, addRange, fitCanvas, insertMedia, makeId, newProject } from "../project/ops";
 import { heavySignature, needsHeavy } from "../project/heavy";
@@ -764,6 +764,20 @@ export async function addLogoWithDialog() {
 }
 
 /** Zona desenfocada o pixelada en el playhead. */
+/** Efecto de un clic en el playhead (queda elegido). */
+export function addEffectAtPlayhead(kind: EffectKind) {
+  const p = activeProject();
+  if (!p || !p.clips.length) return;
+  let id = "";
+  edit((q) => {
+    const [r, newId] = addEffect(q, kind, useEditor.getState().time);
+    id = newId;
+    return r;
+  });
+  setSelection([id]);
+  useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+}
+
 export function addBlurAtPlayhead(mode: "blur" | "pixelate") {
   const p = activeProject();
   if (!p || !p.clips.length) return;

@@ -271,6 +271,57 @@ void main() {
 }
 `;
 
+/**
+ * Efectos de un clic sobre el cuadro ya compuesto (como filters.rs, paso 2b):
+ * 0 = ventana (temblor/zoom punch, perspective), 1 = glitch (geq en enteros),
+ * 2 = tinte (flash blanco o viñeta negra, overlay con alfa).
+ */
+export const EFFECT_FRAG = `${COMMON}
+uniform sampler2D uSrc;
+uniform int uMode;
+uniform vec3 uWin;           // zoom, centro x, centro y
+uniform vec2 uCanvas;        // tamaño del lienzo (px de la exportación)
+uniform float uK;            // paso del glitch
+uniform float uI;            // intensidad
+uniform vec3 uTint;
+uniform float uAlpha;
+uniform float uVignette;
+float rnd(float v) { return floor(v + 0.5); }
+void main() {
+  vec2 p = pixel();
+  if (uMode == 0) {
+    vec2 q = uWin.yz * uSize + (p + 0.5 - 0.5 * uSize) / uWin.x;
+    outColor = vec4(fboAt(uSrc, q - 0.5).rgb, 1.0);
+    return;
+  }
+  if (uMode == 1) {
+    vec2 s = uCanvas / uSize;
+    vec2 pc = floor((p + 0.5) * s);
+    float b = floor(pc.y * 18.0 / uCanvas.y);
+    float h = mod(b * 37.0 + uK * 101.0 + 7.0, 23.0) / 23.0;
+    float shift = h > 0.62 ? rnd(uI * uCanvas.x * 0.06 * (h - 0.62) / 0.38) * (2.0 * mod(b + uK, 2.0) - 1.0) : 0.0;
+    float split = rnd(uI * uCanvas.x * 0.006 * (1.0 + mod(uK * 7.0, 3.0)));
+    float xr = clamp(pc.x + shift + split, 0.0, uCanvas.x - 1.0);
+    float xg = clamp(pc.x + shift, 0.0, uCanvas.x - 1.0);
+    float xb = clamp(pc.x + shift - split, 0.0, uCanvas.x - 1.0);
+    float r = fboAt(uSrc, vec2((xr + 0.5) / s.x - 0.5, p.y)).r;
+    float g = fboAt(uSrc, vec2((xg + 0.5) / s.x - 0.5, p.y)).g;
+    float bl = fboAt(uSrc, vec2((xb + 0.5) / s.x - 0.5, p.y)).b;
+    outColor = vec4(r, g, bl, 1.0);
+    return;
+  }
+  vec3 c = fboAt(uSrc, p).rgb;
+  float a = uAlpha;
+  if (uVignette > 0.5) {
+    vec2 n = (p + 0.5) / uSize;
+    float d = length(2.0 * n - 1.0) / sqrt(2.0);
+    float t = clamp((d - 0.3) / 0.7, 0.0, 1.0);
+    a *= t * t * (3.0 - 2.0 * t);
+  }
+  outColor = vec4(c * (1.0 - a) + uTint * a, 1.0);
+}
+`;
+
 /** Capa RGBA premultiplicada sobre el destino (con blending). */
 export const LAYER_FRAG = `${COMMON}
 uniform sampler2D uLayer;

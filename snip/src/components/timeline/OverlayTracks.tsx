@@ -2,6 +2,8 @@
 // mueve en el tiempo y entre filas, y se recorta por los bordes.
 
 import { isLocked } from "../../project/tracks";
+import { effectLabel } from "../../project/effects";
+import { EFFECT_ICON } from "../inspector/video/EffectsSection";
 import { openContextMenu } from "../ui/ContextMenu";
 import { itemMenu } from "../../store/clipboard";
 import { motion, useReducedMotion } from "motion/react";
@@ -92,6 +94,7 @@ function overlayLabel(p: Project, o: Overlay): string {
     const m = p.media.find((x) => x.id === o.mediaId);
     return m ? basename(m.path) : "Imagen";
   }
+  if (o.type === "effect") return effectLabel(o.kind);
   return o.mode === "pixelate" ? "Pixelado" : "Desenfoque";
 }
 
@@ -122,7 +125,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       () => select(o0.id, o0.type === "text" ? "text" : "video"),
     );
   };
-  const Icon = o.type === "text" ? TextT16Regular : o.type === "video" ? PictureInPicture16Regular : o.type === "blur" ? Blur16Regular : Image16Regular;
+  const Icon = o.type === "text" ? TextT16Regular : o.type === "video" ? PictureInPicture16Regular : o.type === "blur" ? Blur16Regular : o.type === "effect" ? EFFECT_ICON[o.kind] : Image16Regular;
   return (
     <motion.div
       layout={reduce ? false : "position"}
@@ -132,7 +135,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       onPointerDown={down("move")}
       onContextMenu={(e) => openContextMenu(e, itemMenu(o.id))}
       role="button"
-      aria-label={`${o.type === "text" ? "Texto" : o.type === "video" ? "Picture-in-picture" : o.type === "blur" ? "Zona" : "Imagen"}: ${overlayLabel(project, o)}`}
+      aria-label={`${o.type === "text" ? "Texto" : o.type === "video" ? "Picture-in-picture" : o.type === "blur" ? "Zona" : o.type === "effect" ? "Efecto" : "Imagen"}: ${overlayLabel(project, o)}`}
       data-testid="overlay-item"
       data-overlay-id={o.id}
     >
