@@ -1,10 +1,12 @@
-import { useMemo } from "react";
-import { Add16Regular, ArrowDownload16Regular, ArrowUpload16Regular, Delete16Regular } from "@fluentui/react-icons";
+import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Add16Regular, ArrowDownload16Regular, ArrowUpload16Regular, Delete16Regular, Mic20Regular } from "@fluentui/react-icons";
 import type { Project } from "../../../project/model";
 import { FONTS } from "../../../project/templates";
 import { addCue, removeCue, setSubtitleStyle, shiftCues, updateCue } from "../../../project/overlayOps";
 import { edit, gestureEnd, gestureStart, setSelection, useEditor, activeTab } from "../../../store/editor";
-import { exportSrt, importSrtWithDialog, player } from "../../../store/controller";
+import { cancelAutoSubs, exportSrt, generateSubtitles, importSrtWithDialog, player, SUB_LANGUAGES } from "../../../store/controller";
+import { ProgressBar, ProgressRing } from "../../ui/Progress";
 import { Button, IconButton } from "../../ui/Button";
 import { ColorField } from "../../ui/ColorField";
 import { RangeSlider } from "../../ui/RangeSlider";
@@ -51,8 +53,59 @@ export function SubtitlesSection({ project }: { project: Project }) {
   const hasWords = useMemo(() => subs.cues.some((c) => c.words.length > 0), [subs.cues]);
   const setStyle = (patch: Partial<typeof st>) => edit((p) => setSubtitleStyle(p, patch));
 
+  const autoSubs = useEditor((s) => s.autoSubs);
+  const [lang, setLang] = useState(() => {
+    try {
+      return localStorage.getItem("snip.subLang") ?? "es";
+    } catch {
+      return "es";
+    }
+  });
+  const pickLang = (v: string) => {
+    setLang(v);
+    try {
+      localStorage.setItem("snip.subLang", v);
+    } catch {
+      /* sin storage */
+    }
+  };
+
   return (
     <Section title="Subtítulos" testId="subtitles-section">
+      <AnimatePresence initial={false} mode="popLayout">
+        {autoSubs ? (
+          <motion.div
+            key="progress"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col gap-2 rounded-[6px] border border-[var(--stroke-card)] p-3"
+            data-testid="autosubs-progress"
+          >
+            <div className="flex items-center gap-2">
+              <ProgressRing size={16} stroke={2} />
+              <span className="t-body-strong flex-1">
+                {autoSubs.phase === "download" ? "Descargando el reconocimiento de voz" : autoSubs.phase === "audio" ? "Preparando el audio" : "Escuchando y escribiendo"}
+              </span>
+              <span className="t-caption tabular text-[var(--text-secondary)]">{Math.round(autoSubs.percent)}%</span>
+            </div>
+            <ProgressBar value={autoSubs.percent} testId="autosubs-bar" />
+            <div className="flex items-center justify-between">
+              <span className="t-caption tabular text-[var(--text-secondary)]">{autoSubs.detail ?? (autoSubs.phase === "transcribing" ? "Podés seguir editando." : "")}</span>
+              <Button variant="subtle" onClick={cancelAutoSubs} data-testid="autosubs-cancel">
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key="generate" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-2">
+            <Button variant="accent" icon={<Mic20Regular />} onClick={() => void generateSubtitles(lang)} disabled={!project.clips.length} data-testid="autosubs-generate">
+              Generar automáticamente
+            </Button>
+            <Select label="Idioma del video" value={lang} options={SUB_LANGUAGES} onChange={pickLang} testId="autosubs-language" />
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex flex-wrap gap-2">
         <Button icon={<ArrowUpload16Regular />} onClick={() => void importSrtWithDialog()} data-testid="srt-import">
           Importar .srt

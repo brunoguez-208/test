@@ -6,7 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { Clip, Loudness, MediaRef, Project } from "../project/model";
+import type { Clip, Cue, Loudness, MediaRef, Project } from "../project/model";
 import type {
   Appearance,
   EncoderInfo,
@@ -62,6 +62,11 @@ export const api = {
   discardRaster: (dir: string) => invoke<void>("discard_raster", { dir }),
   readSubtitles: (path: string) => invoke<string>("read_subtitles", { path }),
   writeSubtitles: (path: string, text: string) => invoke<string>("write_subtitles", { path, text }),
+  modelStatus: () => invoke<ModelStatus>("model_status"),
+  downloadModel: () => invoke<void>("download_model"),
+  cancelModelDownload: () => invoke<void>("cancel_model_download"),
+  transcribe: (project: Project, language: string | null) => invoke<Transcript>("transcribe", { project, language }),
+  cancelTranscribe: () => invoke<void>("cancel_transcribe"),
   filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
   revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
   openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
@@ -83,7 +88,23 @@ export const events = {
   onQueue: (cb: (items: QueueItem[]) => void) => listen<{ items: QueueItem[] }>("queue-updated", (e) => cb(e.payload.items)),
   onOpenFile: (cb: (path: string) => void) => listen<string>("open-file", (e) => cb(e.payload)),
   onThemeChanged: (cb: (p: Palette) => void) => listen<Palette>("theme-changed", (e) => cb(e.payload)),
+  onModelProgress: (cb: (p: { received: number; total: number | null }) => void) =>
+    listen<{ received: number; total: number | null }>("model-progress", (e) => cb(e.payload)),
+  onTranscribeProgress: (cb: (p: { stage: "audio" | "transcribing"; percent: number }) => void) =>
+    listen<{ stage: "audio" | "transcribing"; percent: number }>("transcribe-progress", (e) => cb(e.payload)),
 };
+
+export interface ModelStatus {
+  present: boolean;
+  downloadMb: number;
+  engine: boolean;
+}
+
+export interface Transcript {
+  cues: Cue[];
+  language: string | null;
+  gpu: boolean;
+}
 
 export function mediaSrc(path: string): string {
   return convertFileSrc(path);

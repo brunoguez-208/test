@@ -702,6 +702,103 @@ export async function exportSrt() {
   }
 }
 
+// ------------------------- Subtítulos automáticos -------------------------
+
+export const SUB_LANGUAGES: { value: string; label: string }[] = [
+  { value: "es", label: "Español" },
+  { value: "auto", label: "Detectar automáticamente" },
+  { value: "en", label: "Inglés" },
+  { value: "pt", label: "Portugués" },
+  { value: "fr", label: "Francés" },
+  { value: "it", label: "Italiano" },
+  { value: "de", label: "Alemán" },
+  { value: "ca", label: "Catalán" },
+  { value: "ja", label: "Japonés" },
+];
+
+const LANGUAGE_NAMES: Record<string, string> = Object.fromEntries(SUB_LANGUAGES.filter((l) => l.value !== "auto").map((l) => [l.value, l.label.toLowerCase()]));
+
+let autoSubsListening = false;
+function listenAutoSubs() {
+  if (autoSubsListening) return;
+  autoSubsListening = true;
+  void events.onModelProgress(({ received, total }) => {
+    const mb = (n: number) => Math.round(n / 1e6);
+    const st = useEditor.getState().autoSubs;
+    if (st?.phase !== "download") return;
+    useEditor.setState({ autoSubs: { phase: "download", percent: total ? (100 * received) / total : 0, detail: total ? `${mb(received)} de ${mb(total)} MB` : `${mb(received)} MB` } });
+  });
+  void events.onTranscribeProgress(({ stage, percent }) => {
+    if (!useEditor.getState().autoSubs) return;
+    useEditor.setState({ autoSubs: { phase: stage, percent } });
+  });
+}
+
+/**
+ * Genera subtítulos con whisper.cpp. La primera vez baja el modelo (con
+ * permiso). Todo corre en segundo plano y se puede cancelar.
+ */
+export async function generateSubtitles(language: string) {
+  const p = activeProject();
+  if (!p || !p.clips.length) return;
+  if (useEditor.getState().autoSubs) return;
+  listenAutoSubs();
+  try {
+    const status = await api.modelStatus();
+    if (!status.engine) {
+      pushToast({ severity: "critical", title: "Falta el motor de subtítulos automáticos", message: "Reinstalá Snip para recuperarlo." });
+      return;
+    }
+    if (!status.present) {
+      const ok = await ask({
+        title: "Descargar el reconocimiento de voz",
+        body: `La primera vez hay que bajar el modelo de reconocimiento de voz (unos ${status.downloadMb} MB). Se guarda en tu equipo y después funciona sin internet.`,
+        primary: "Descargar",
+        secondary: "Ahora no",
+      });
+      if (ok !== "primary") return;
+      useEditor.setState({ autoSubs: { phase: "download", percent: 0 } });
+      await api.downloadModel();
+    }
+    useEditor.setState({ autoSubs: { phase: "audio", percent: 0 } });
+    const r = await api.transcribe(p, language === "auto" ? null : language);
+    useEditor.setState({ autoSubs: null });
+    if (!r.cues.length) {
+      pushToast({ severity: "caution", title: "No se escuchó nada para subtitular", message: "Revisá que el video tenga voz y que el idioma sea el correcto." });
+      return;
+    }
+    const cues = r.cues.map((c) => ({ ...c, id: makeId("s") }));
+    let replace = true;
+    const cur = activeProject();
+    if (cur?.subtitles.cues.length) {
+      const a = await ask({
+        title: "¿Reemplazar los subtítulos?",
+        body: `El proyecto ya tiene ${cur.subtitles.cues.length} subtítulos.`,
+        primary: "Reemplazar",
+        secondary: "Sumar",
+      });
+      if (a === "cancel") return;
+      replace = a === "primary";
+    }
+    edit((q) => setCues(q, replace ? cues : [...q.subtitles.cues, ...cues], r.language));
+    const lang = r.language && LANGUAGE_NAMES[r.language] ? ` en ${LANGUAGE_NAMES[r.language]}` : "";
+    pushToast({ severity: "success", title: `${cues.length} subtítulos generados${lang}`, message: r.gpu ? "Se usó la placa de video." : "Se usó el procesador." });
+  } catch (e) {
+    useEditor.setState({ autoSubs: null });
+    const err = toAppError(e);
+    if (err.kind === "cancelled") return;
+    notifyError("No se pudieron generar los subtítulos", err);
+  }
+}
+
+export function cancelAutoSubs() {
+  const st = useEditor.getState().autoSubs;
+  if (!st) return;
+  if (st.phase === "download") void api.cancelModelDownload();
+  else void api.cancelTranscribe();
+  useEditor.setState({ autoSubs: null });
+}
+
 // ---- Capas rasterizadas (textos, subtítulos, logos) para la exportación ----
 
 let decorCache: { sig: string; seq: DecorSequence } | null = null;

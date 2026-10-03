@@ -106,6 +106,9 @@ export interface MockState {
   exportMs: number;
   /** Pausa la cola (para testear la espera y el reordenamiento). */
   holdQueue: boolean;
+  /** Subtítulos automáticos: ¿ya está el modelo? y cuánto tarda cada etapa (ms). */
+  modelPresent: boolean;
+  transcribeMs: number;
   /** Capas rasterizadas recibidas: carpeta → archivos (y listas ffconcat). */
   raster: Record<string, { files: string[]; lists: Record<string, string> }>;
 }
@@ -175,6 +178,8 @@ export function installTauriMock() {
     queue: [],
     exportMs: Number(params.get("exportMs") ?? 1500),
     holdQueue: false,
+    modelPresent: false,
+    transcribeMs: 600,
     raster: {},
   };
   if (params.get("seed") === "1") {
@@ -444,6 +449,39 @@ export function installTauriMock() {
         }
         case "discard_raster":
           return null;
+        case "model_status":
+          return { present: state.modelPresent, downloadMb: 550, engine: true };
+        case "download_model": {
+          const total = 547_000_000;
+          for (let i = 1; i <= 5; i++) {
+            await new Promise((r) => setTimeout(r, state.transcribeMs / 5));
+            if (state.calls.some((c) => c.cmd === "cancel_model_download")) throw { kind: "cancelled", message: "Cancelado" } satisfies AppError;
+            await emit("model-progress", { received: (total * i) / 5, total });
+          }
+          state.modelPresent = true;
+          return null;
+        }
+        case "cancel_model_download":
+        case "cancel_transcribe":
+          return null;
+        case "transcribe": {
+          for (const [stage, n] of [["audio", 2], ["transcribing", 4]] as const) {
+            for (let i = 1; i <= n; i++) {
+              await new Promise((r) => setTimeout(r, state.transcribeMs / 6));
+              if (state.calls.some((c) => c.cmd === "cancel_transcribe")) throw { kind: "cancelled", message: "Cancelado" } satisfies AppError;
+              await emit("transcribe-progress", { stage, percent: (100 * i) / n });
+            }
+          }
+          const w = (start: number, end: number, text: string) => ({ start, end, text });
+          return {
+            language: a.language ?? "es",
+            gpu: true,
+            cues: [
+              { id: "w1", start: 0.4, end: 1.6, text: "Hola a todos.", words: [w(0.4, 0.8, "Hola"), w(0.8, 1.0, "a"), w(1.0, 1.6, "todos.")] },
+              { id: "w2", start: 1.9, end: 3.4, text: "Esto lo escribió la máquina", words: [w(1.9, 2.2, "Esto"), w(2.2, 2.4, "lo"), w(2.4, 2.9, "escribió"), w(2.9, 3.0, "la"), w(3.0, 3.4, "máquina")] },
+            ],
+          };
+        }
         case "read_subtitles":
           return "1\n00:00:00,500 --> 00:00:02,000\nHola, ¿qué tal?\n\n2\n00:00:02,500 --> 00:00:04,500\nEsto es una prueba\n";
         case "write_subtitles":

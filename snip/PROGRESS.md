@@ -112,7 +112,7 @@ se corta, se retoma desde acá.
 - [x] 28. Nitidez y reducción de ruido de imagen
 - [x] 29. Texto y títulos
 - [x] 30. Subtítulos `.srt`
-- [ ] 31. Subtítulos automáticos (whisper.cpp)
+- [x] 31. Subtítulos automáticos (whisper.cpp)
 - [x] 32. Marca de agua / logo
 - [ ] 33. Desenfocar / pixelar zona
 - [ ] 34. Picture-in-picture
@@ -133,3 +133,11 @@ se corta, se retoma desde acá.
 - whisper.cpp: los binarios oficiales para Windows solo traen CPU o CUDA (670 MB). Se compila
   con MinGW + Vulkan (`scripts/build-whisper.sh`): GPU de NVIDIA, AMD o Intel, y la CPU como
   respaldo automático (ggml carga los backends como DLL).
+- Subtítulos automáticos: modelo `ggml-large-v3-turbo-q5_0.bin` (multilingüe, ~547 MB) desde
+  Hugging Face la primera vez, con `curl.exe` de Windows (reanuda descargas cortadas) y validación
+  de la firma; vive en la carpeta de datos (`models/`). El audio es la misma mezcla que se exporta
+  (WAV 16 kHz mono). whisper-cli con `-ml 1 -sow` da palabras con tiempos; se agrupan en
+  subtítulos de ≤ 42 caracteres y ≤ 5 s, cortando en pausas y fin de oración. GPU primero; si
+  falla, se repite con `-ng` (CPU). En este entorno no se puede bajar el modelo (Hugging Face está
+  bloqueado): la transcripción real queda para la prueba manual; parsing, agrupado, argumentos,
+  descarga (con `file://`) y extracción de audio sí tienen tests.

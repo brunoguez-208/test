@@ -24,6 +24,7 @@ pub mod scale;
 pub mod sizing;
 pub mod store;
 pub mod timeline;
+pub mod transcribe;
 #[cfg(test)]
 pub(crate) mod testutil;
 

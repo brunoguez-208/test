@@ -484,3 +484,33 @@ fn waveform_and_media_probing() {
     assert_eq!((v.kind, v.width, v.height), (MediaKind::Video, 360, 640));
     assert_eq!(v.video_codec.as_deref(), Some("vp9"));
 }
+
+#[test]
+fn transcription_audio_is_16k_mono_wav_of_the_whole_mix() {
+    guard!();
+    let a = media("a", "a.mp4");
+    let q = media("q", "quiet.mp4");
+    let mut p = project(vec![a, q], vec![clip("c1", "a", 1.0, 3.0), clip("c2", "q", 0.0, 2.0)]);
+    p.clips[0].speed = 2.0; // 1 s en el timeline
+    let env = ExportEnv { tools: &fx().tools, encoder: Encoder::Libx264, heavy_dir: &fx().root.join("cache"), temp_dir: &fx().root.join("tmp") };
+    let wav = fx().root.join("out").join("transcribir.wav");
+    let mut last = 0.0;
+    let d = snip_core::transcribe::extract_audio(&env, &p, &wav, &JobControl::new(), |pct| last = pct).unwrap();
+    assert!((d - 3.0).abs() < 0.05, "duración {d}");
+    assert!(last > 90.0);
+    let out = Command::new(&fx().tools.ffprobe)
+        .args(["-v", "error", "-show_entries", "stream=codec_name,sample_rate,channels:format=duration", "-of", "json", wav.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["streams"][0]["codec_name"], "pcm_s16le");
+    assert_eq!(v["streams"][0]["sample_rate"], "16000");
+    assert_eq!(v["streams"][0]["channels"], 1);
+    let dur: f64 = v["format"]["duration"].as_str().unwrap().parse().unwrap();
+    assert!((dur - 3.0).abs() < 0.05, "wav {dur}");
+    // Sin audio: error claro.
+    let b = media("b", "b.mkv");
+    let mute = project(vec![b], vec![clip("c", "b", 0.0, 1.0)]);
+    let e = snip_core::transcribe::extract_audio(&env, &mute, &wav, &JobControl::new(), |_| {}).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::NoAudio);
+}

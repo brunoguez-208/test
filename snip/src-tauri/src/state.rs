@@ -31,6 +31,12 @@ pub struct AppState {
     pub heavy_jobs: Mutex<HashMap<String, JobControl>>,
     pub waveforms: Mutex<HashMap<String, std::sync::Arc<Vec<u8>>>>,
     pub queue: OnceLock<ExportQueue>,
+    /// Datos de la app (proyectos, recientes, modelos).
+    pub data_dir: PathBuf,
+    /// Carpeta de whisper-cli y sus DLL (recursos de la instalación).
+    pub whisper_dir: PathBuf,
+    pub model_job: Mutex<Option<JobControl>>,
+    pub transcribe_job: Mutex<Option<JobControl>>,
     /// Encoder detectado. El Mutex también serializa la detección.
     encoder: Mutex<Option<Encoder>>,
 }
@@ -63,6 +69,20 @@ pub fn resolve_tools() -> Tools {
     }
 }
 
+/// whisper-cli: junto al ejecutable, en `whisper/` (así lo deja el instalador).
+pub fn resolve_whisper_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("SNIP_WHISPER_DIR") {
+        return PathBuf::from(dir);
+    }
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let installed = exe_dir.join("whisper");
+    if installed.is_dir() {
+        return installed;
+    }
+    // Desarrollo: los binarios de src-tauri/binaries/whisper.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join("whisper")
+}
+
 impl AppState {
     pub fn new(tools: Tools, cache_dir: PathBuf, data_dir: PathBuf, launch_file: Option<String>) -> Self {
         for d in ["proxies", "heavy", "tmp", "raster"] {
@@ -71,6 +91,10 @@ impl AppState {
         Self {
             tools,
             store: Store::new(&data_dir),
+            whisper_dir: resolve_whisper_dir(),
+            data_dir,
+            model_job: Mutex::new(None),
+            transcribe_job: Mutex::new(None),
             cache_dir,
             launch_file: Mutex::new(launch_file),
             material: Mutex::new("none".into()),

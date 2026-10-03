@@ -163,3 +163,46 @@ test.describe("logo y exportación con capas", () => {
     expect(r.lists["decor.ffconcat"]).toMatch(/^ffconcat version 1\.0\nfile 'f00001\.png'\nduration /);
   });
 });
+
+test.describe("subtítulos automáticos", () => {
+  test("la primera vez pide bajar el modelo, muestra el progreso y genera palabra por palabra", async ({ page }) => {
+    await open(page);
+    await page.getByTestId("inspector-tab-text").click();
+    await page.getByTestId("autosubs-generate").click();
+    await expect(page.getByRole("dialog")).toContainText("550 MB");
+    await page.getByRole("button", { name: "Descargar" }).click();
+    await expect(page.getByTestId("autosubs-progress")).toContainText("Descargando");
+    await expect(page.getByTestId("autosubs-progress")).toContainText("MB");
+    await page.screenshot({ path: `${SHOTS}/26-subtitulos-auto.png` });
+    await expect(page.getByTestId("autosubs-progress")).toContainText("Escuchando", { timeout: 8_000 });
+    await expect(page.getByTestId("autosubs-progress")).toHaveCount(0, { timeout: 8_000 });
+    await expect(page.getByTestId("cue-row")).toHaveCount(2);
+    await expect(page.getByText("2 subtítulos generados en español")).toBeVisible();
+    await expect.poll(async () => (await project(page))?.subtitles).toMatchObject({ language: "es", cues: [{ text: "Hola a todos.", words: [{ text: "Hola" }, {}, {}] }, {}] });
+    await page.getByTestId("word-by-word").click();
+    await seek(page, 2.5);
+    await page.screenshot({ path: `${SHOTS}/27-palabra-por-palabra.png` });
+    // La segunda vez ya no pregunta por el modelo.
+    await page.getByTestId("autosubs-generate").click();
+    await expect(page.getByTestId("autosubs-progress")).toContainText("Preparando el audio");
+    await expect(page.getByRole("dialog")).toContainText("Reemplazar", { timeout: 8_000 });
+  });
+
+  test("se puede cancelar", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => {
+      window.__snipMock.modelPresent = true;
+      window.__snipMock.transcribeMs = 5000;
+    });
+    await page.getByTestId("inspector-tab-text").click();
+    await page.getByTestId("autosubs-language").click();
+    await page.getByRole("option", { name: "Detectar automáticamente" }).click();
+    await page.getByTestId("autosubs-generate").click();
+    await expect(page.getByTestId("autosubs-progress")).toBeVisible();
+    await page.getByTestId("autosubs-cancel").click();
+    await expect(page.getByTestId("autosubs-progress")).toHaveCount(0);
+    await expect(page.getByTestId("cue-row")).toHaveCount(0);
+    const call = await page.evaluate(() => window.__snipMock.calls.find((c) => c.cmd === "transcribe")?.args as { language: string | null });
+    expect(call.language).toBeNull();
+  });
+});

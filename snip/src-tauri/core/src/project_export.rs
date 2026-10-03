@@ -208,6 +208,30 @@ pub fn heavy_clips(p: &Project, window: Option<(f64, f64)>) -> Vec<usize> {
     (range.0..=range.1).filter(|&i| i < p.clips.len() && heavy::needs_heavy(&p.clips[i])).collect()
 }
 
+/// Procesa (o toma de la caché) los clips con efectos pesados del rango.
+/// `on_progress` va de 0 a 100 sobre todos los clips.
+pub fn prepare_intermediates(
+    env: &ExportEnv,
+    p: &Project,
+    window: Option<(f64, f64)>,
+    ctl: &JobControl,
+    mut on_progress: impl FnMut(f64),
+) -> Result<HashMap<String, Intermediate>, AppError> {
+    let heavy = heavy_clips(p, window);
+    let mut intermediates: HashMap<String, Intermediate> = HashMap::new();
+    for (n, &i) in heavy.iter().enumerate() {
+        let c = &p.clips[i];
+        let media = p.media(&c.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
+        let base = 100.0 * n as f64 / heavy.len() as f64;
+        let span = 100.0 / heavy.len() as f64;
+        let inter = heavy::process_clip(env.tools, media, c, &p.canvas.fps_expr(), p.canvas.fps(), env.encoder, env.heavy_dir, ctl, |pct| {
+            on_progress(base + span * pct / 100.0)
+        })?;
+        intermediates.insert(c.id.clone(), inter);
+    }
+    Ok(intermediates)
+}
+
 pub struct ExportEnv<'a> {
     pub tools: &'a Tools,
     pub encoder: Encoder,
@@ -270,29 +294,10 @@ pub fn export_project(
     }
 
     // --- Etapa pesada ---
-    let heavy = heavy_clips(p, job.window());
-    let heavy_share = if heavy.is_empty() { 0.0 } else { 40.0 };
-    let mut intermediates: HashMap<String, Intermediate> = HashMap::new();
-    for (n, &i) in heavy.iter().enumerate() {
-        let c = &p.clips[i];
-        let media = p.media(&c.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
-        let base = heavy_share * n as f64 / heavy.len() as f64;
-        let span = heavy_share / heavy.len() as f64;
-        let inter = heavy::process_clip(
-            env.tools,
-            media,
-            c,
-            &p.canvas.fps_expr(),
-            p.canvas.fps(),
-            env.encoder,
-            env.heavy_dir,
-            ctl,
-            |pct| {
-                on_progress(JobProgress { percent: base + span * pct / 100.0, speed: None, eta_secs: None, stage: Stage::Preparing })
-            },
-        )?;
-        intermediates.insert(c.id.clone(), inter);
-    }
+    let heavy_share = if heavy_clips(p, job.window()).is_empty() { 0.0 } else { 40.0 };
+    let intermediates = prepare_intermediates(env, p, job.window(), ctl, |pct| {
+        on_progress(JobProgress { percent: heavy_share * pct / 100.0, speed: None, eta_secs: None, stage: Stage::Preparing })
+    })?;
 
     // --- Codificación ---
     let raster = job.raster.as_ref().map(RasterSpec::to_inputs);

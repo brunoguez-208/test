@@ -66,7 +66,8 @@
     ],
     "resources": {
       "binaries/FFMPEG-LICENSE.txt": "FFMPEG-LICENSE.txt",
-      "icons/snip-file.ico": "snip-file.ico"
+      "icons/snip-file.ico": "snip-file.ico",
+      "binaries/whisper/": "whisper/"
     },
     "fileAssociations": [
       {

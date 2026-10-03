@@ -165,6 +165,67 @@ pub fn run_ffmpeg(
     Ok(stderr_text)
 }
 
+/// Corre cualquier programa (curl, whisper) registrándolo en `job` para poder
+/// cancelarlo. Cada línea de stderr pasa por `on_line`; stdout se descarta.
+/// Devuelve si terminó bien y las últimas líneas de stderr.
+pub fn run_streaming(
+    program: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+    job: &JobControl,
+    mut on_line: impl FnMut(&str),
+) -> Result<(bool, String), AppError> {
+    if job.is_cancelled() {
+        return Err(AppError::new(ErrorKind::Cancelled));
+    }
+    let mut cmd = command(program);
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AppError::with_detail(ErrorKind::Unknown, format!("No se encontró {}", program.display()))
+        } else {
+            AppError::from_io(&e)
+        }
+    })?;
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    // stdout puede ser largo (whisper imprime la transcripción): se drena aparte.
+    let drain = std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let _ = BufReader::new(stdout).read_to_end(&mut sink);
+    });
+    if let Ok(mut g) = job.child.lock() {
+        *g = Some(child);
+    }
+    if job.is_cancelled() {
+        job.cancel();
+    }
+    let mut tail = String::new();
+    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+        on_line(&line);
+        tail.push_str(&line);
+        tail.push('\n');
+        if tail.len() > 64 * 1024 {
+            let cut = tail.len() - 32 * 1024;
+            let cut = (cut..tail.len()).find(|i| tail.is_char_boundary(*i)).unwrap_or(0);
+            tail.drain(..cut);
+        }
+    }
+    let _ = drain.join();
+    let status = {
+        let mut g = job.child.lock().map_err(|_| AppError::new(ErrorKind::Unknown))?;
+        let mut child = g.take().expect("child guardado");
+        child.wait().map_err(|e| AppError::from_io(&e))?
+    };
+    if job.is_cancelled() {
+        return Err(AppError::new(ErrorKind::Cancelled));
+    }
+    Ok((status.success(), tail))
+}
+
 /// Borra un archivo con reintentos (en Windows el handle puede tardar en liberarse).
 pub fn remove_with_retry(path: &Path) {
     for _ in 0..20 {
@@ -226,6 +287,18 @@ mod tests {
         let err = run_capture(Path::new("/definitivamente/no/existe/ffprobe"), &[]).unwrap_err();
         assert_eq!(err.kind, ErrorKind::FfmpegMissing);
         assert!(!run_ok(Path::new("/no/existe"), &[]));
+    }
+
+    #[test]
+    fn streaming_reports_stderr_lines() {
+        let job = JobControl::new();
+        let mut lines = vec![];
+        let (ok, tail) = run_streaming(Path::new("sh"), &["-c".into(), "echo uno >&2; echo salida; echo dos >&2".into()], None, &job, |l| lines.push(l.to_string())).unwrap();
+        assert!(ok);
+        assert_eq!(lines, vec!["uno", "dos"]);
+        assert!(tail.contains("dos"));
+        let (ok, _) = run_streaming(Path::new("sh"), &["-c".into(), "exit 3".into()], None, &job, |_| {}).unwrap();
+        assert!(!ok);
     }
 
     #[test]

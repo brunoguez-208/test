@@ -515,6 +515,117 @@ pub fn discard_raster(state: State<'_, AppState>, dir: String) {
     snip_core::raster::remove_job_dir(&state.raster_dir(), &dir);
 }
 
+// ------------------------- Subtítulos automáticos -------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    pub present: bool,
+    /// Tamaño aproximado de la descarga (MB).
+    pub download_mb: u64,
+    /// ¿Está instalado whisper-cli?
+    pub engine: bool,
+}
+
+#[tauri::command]
+pub fn model_status(state: State<'_, AppState>) -> ModelStatus {
+    use snip_core::transcribe::*;
+    ModelStatus {
+        present: model_file_ok(&model_path(&state.data_dir), MODEL_MIN_BYTES),
+        download_mb: 550,
+        engine: whisper_exe(&state.whisper_dir).is_file(),
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelProgress {
+    received: u64,
+    total: Option<u64>,
+}
+
+/// Baja el modelo de reconocimiento de voz (una sola vez), con progreso.
+#[tauri::command]
+pub async fn download_model(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    use snip_core::transcribe::*;
+    let dest = model_path(&state.data_dir);
+    let ctl = JobControl::new();
+    if let Ok(mut g) = state.model_job.lock() {
+        if let Some(prev) = g.replace(ctl.clone()) {
+            prev.cancel();
+        }
+    }
+    blocking(move || {
+        download_model(&curl_program(), MODEL_URL, &dest, MODEL_MIN_BYTES, &ctl, |received, total| {
+            let _ = app.emit("model-progress", ModelProgress { received, total });
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn cancel_model_download(state: State<'_, AppState>) {
+    if let Ok(mut g) = state.model_job.lock() {
+        if let Some(j) = g.take() {
+            j.cancel();
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscribeProgress {
+    stage: snip_core::transcribe::TranscribeStage,
+    percent: f64,
+}
+
+/// Transcribe el audio del proyecto y devuelve los subtítulos (palabra por palabra).
+#[tauri::command]
+pub async fn transcribe(app: AppHandle, state: State<'_, AppState>, project: Project, language: Option<String>) -> CmdResult<snip_core::transcribe::Transcript> {
+    use snip_core::transcribe::*;
+    let model = model_path(&state.data_dir);
+    if !model_file_ok(&model, MODEL_MIN_BYTES) {
+        return Err(AppError::with_message(ErrorKind::NotFound, "Falta el modelo de reconocimiento de voz."));
+    }
+    let whisper = whisper_exe(&state.whisper_dir);
+    if !whisper.is_file() {
+        return Err(AppError::with_message(ErrorKind::NotFound, "Falta el motor de subtítulos automáticos. Reinstalá Snip."));
+    }
+    let ctl = JobControl::new();
+    if let Ok(mut g) = state.transcribe_job.lock() {
+        if let Some(prev) = g.replace(ctl.clone()) {
+            prev.cancel();
+        }
+    }
+    let tools = state.tools.clone();
+    let encoder = state.encoder();
+    let heavy = state.heavy_dir();
+    let temp = state.temp_dir();
+    blocking(move || {
+        let work = temp.join(format!("whisper-{}", std::process::id()));
+        std::fs::create_dir_all(&work).map_err(|e| AppError::from_io(&e))?;
+        let wav = work.join("audio.wav");
+        let env = snip_core::project_export::ExportEnv { tools: &tools, encoder, heavy_dir: &heavy, temp_dir: &temp };
+        let emit = |stage: TranscribeStage, percent: f64| {
+            let _ = app.emit("transcribe-progress", TranscribeProgress { stage, percent });
+        };
+        let result = extract_audio(&env, &project, &wav, &ctl, |p| emit(TranscribeStage::Audio, p))
+            .and_then(|_| run_whisper(&whisper, &model, &wav, &work, language.as_deref(), &ctl, |p| emit(TranscribeStage::Transcribing, p)));
+        let _ = std::fs::remove_dir_all(&work);
+        result
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn cancel_transcribe(state: State<'_, AppState>) {
+    if let Ok(mut g) = state.transcribe_job.lock() {
+        if let Some(j) = g.take() {
+            j.cancel();
+        }
+    }
+}
+
 const MAX_SRT: u64 = 5 * 1024 * 1024;
 
 fn is_srt(path: &Path) -> bool {

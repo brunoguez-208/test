@@ -84,6 +84,8 @@ export interface EditorState {
   waveforms: Record<string, Uint8Array>;
 
   imageEdit: ImageEdit | null;
+  /** Subtítulos automáticos en curso (descarga del modelo, audio, transcripción). */
+  autoSubs: { phase: "download" | "audio" | "transcribing"; percent: number; detail?: string } | null;
 
   drag: DragHint;
   toasts: Toast[];
@@ -115,6 +117,7 @@ export const initialState: EditorState = {
   thumbs: {},
   waveforms: {},
   imageEdit: null,
+  autoSubs: null,
   drag: "none",
   toasts: [],
   focused: true,
