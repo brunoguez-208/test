@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es-UY">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Snip</title>
+  </head>
+  <body>
+    <!--
+      Barra de título. Tiene que existir antes de que cargue la página porque
+      tauri-plugin-decorum busca [data-tauri-decorum-tb] en DOMContentLoaded e
+      inyecta ahí los botones nativos (minimizar, maximizar con Snap Layouts, cerrar).
+      React dibuja el contenido en #titlebar-content con un portal.
+    -->
+    <header id="titlebar" data-tauri-decorum-tb>
+      <div id="titlebar-drag" data-tauri-drag-region></div>
+      <div id="titlebar-content"></div>
+    </header>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

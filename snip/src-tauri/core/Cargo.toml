@@ -1,0 +1,13 @@
+[package]
+name = "snip-core"
+version = "1.0.0"
+edition = "2021"
+description = "Lógica de FFmpeg/FFprobe de Snip, sin dependencias de UI (testeable en cualquier plataforma)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
