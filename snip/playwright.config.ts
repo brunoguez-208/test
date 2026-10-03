@@ -12,7 +12,17 @@ export default defineConfig({
     viewport: { width: 1280, height: 820 },
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 820 } } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 820 },
+        // Permite usar un Chromium ya instalado (CI / entornos sin descarga de navegadores).
+        launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
+      },
+    },
+  ],
   webServer: {
     command: "npm run build:mock && npm run preview:mock",
     url: "http://localhost:4173",

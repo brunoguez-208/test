@@ -218,6 +218,48 @@ pub fn parse_probe(json: &str, path: &str) -> Result<MediaInfo, AppError> {
     })
 }
 
+/// Metadatos de un archivo de audio (música).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioInfo {
+    pub duration: f64,
+    pub codec: String,
+    pub size_bytes: Option<u64>,
+}
+
+pub fn parse_audio_probe(json: &str) -> Result<AudioInfo, AppError> {
+    let probe: ProbeJson = serde_json::from_str(json).map_err(|e| AppError::with_detail(ErrorKind::Corrupt, e.to_string()))?;
+    let format = probe.format.unwrap_or_default();
+    let audio = probe
+        .streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("audio"))
+        .ok_or_else(|| AppError::with_message(ErrorKind::NoAudio, "Ese archivo no tiene audio."))?;
+    let duration = parse_f64(&format.duration)
+        .or_else(|| parse_f64(&audio.duration))
+        .filter(|d| *d > 0.0)
+        .ok_or_else(|| AppError::with_detail(ErrorKind::Corrupt, "duración desconocida"))?;
+    Ok(AudioInfo {
+        duration,
+        codec: audio.codec_name.clone().unwrap_or_else(|| "desconocido".into()),
+        size_bytes: parse_u64(&format.size),
+    })
+}
+
+/// Tamaño de una imagen (logo, marca de agua, PiP).
+pub fn parse_image_probe(json: &str) -> Result<(u32, u32), AppError> {
+    let probe: ProbeJson = serde_json::from_str(json).map_err(|e| AppError::with_detail(ErrorKind::Corrupt, e.to_string()))?;
+    let v = probe
+        .streams
+        .iter()
+        .find(|s| s.codec_type.as_deref() == Some("video"))
+        .ok_or_else(|| AppError::new(ErrorKind::Corrupt))?;
+    match (v.width, v.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Ok((w, h)),
+        _ => Err(AppError::new(ErrorKind::Corrupt)),
+    }
+}
+
 /// Parsea la salida CSV de `keyframe_args` ("pts_time,flags" por línea) y
 /// devuelve los tiempos de los keyframes ordenados.
 pub fn parse_keyframes(csv: &str) -> Vec<f64> {
@@ -311,6 +353,16 @@ mod tests {
         assert_eq!(normalize_rotation(-90.0), 270);
         assert_eq!(normalize_rotation(90.0), 90);
         assert_eq!(normalize_rotation(-180.0), 180);
+    }
+
+    #[test]
+    fn parses_audio_and_images() {
+        let a = parse_audio_probe(r#"{"streams":[{"codec_type":"audio","codec_name":"mp3"}],"format":{"duration":"183.2","size":"4000000"}}"#).unwrap();
+        assert_eq!(a.codec, "mp3");
+        assert!((a.duration - 183.2).abs() < 1e-9);
+        assert_eq!(parse_audio_probe(r#"{"streams":[],"format":{"duration":"3"}}"#).unwrap_err().kind, ErrorKind::NoAudio);
+        let i = parse_image_probe(r#"{"streams":[{"codec_type":"video","codec_name":"png","width":512,"height":256}],"format":{}}"#).unwrap();
+        assert_eq!(i, (512, 256));
     }
 
     #[test]

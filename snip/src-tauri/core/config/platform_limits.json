@@ -1,0 +1,11 @@
+{
+  "_comment": "Límites de tamaño por plataforma. Único lugar a editar cuando cambien. MB = 1.000.000 bytes (así el archivo siempre queda debajo, cuente la plataforma en MB o en MiB). Verificado: octubre 2026 (Discord gratis subió de 10 a 20 MB en agosto 2026).",
+  "verifiedAt": "2026-10-03",
+  "targetRatio": 0.95,
+  "presets": [
+    { "id": "discord", "group": "discord", "label": "Discord", "tier": "Gratis", "megabytes": 20 },
+    { "id": "discordBasic", "group": "discord", "label": "Discord", "tier": "Nitro Basic", "megabytes": 50 },
+    { "id": "discordNitro", "group": "discord", "label": "Discord", "tier": "Nitro", "megabytes": 500 },
+    { "id": "whatsapp", "group": "whatsapp", "label": "WhatsApp", "tier": null, "megabytes": 16 }
+  ]
+}

@@ -96,6 +96,7 @@ fn fixtures() -> &'static Fixtures {
         let full = std::fs::read(root.join("h264_noaudio.mp4")).unwrap();
         std::fs::write(root.join("corrupt.mp4"), &full[..full.len() / 2]).unwrap();
         std::fs::write(root.join("clip.mov"), b"not really").unwrap();
+        std::fs::write(root.join("clip.avi"), b"not really").unwrap();
 
         Fixtures { _dir: tmp, root, tools }
     })
@@ -184,7 +185,9 @@ fn probes_all_fixture_kinds() {
 fn probe_errors_are_friendly() {
     guard!();
     let t = &fixtures().tools;
-    assert_eq!(snip_core::probe_file(t, &f("clip.mov")).unwrap_err().kind, ErrorKind::NotMp4);
+    // Desde Snip 2 se abren MP4, MOV, MKV y WebM: un .mov roto es "dañado", un .avi no se abre.
+    assert_eq!(snip_core::probe_file(t, &f("clip.mov")).unwrap_err().kind, ErrorKind::Corrupt);
+    assert_eq!(snip_core::probe_file(t, &f("clip.avi")).unwrap_err().kind, ErrorKind::UnsupportedFormat);
     assert_eq!(snip_core::probe_file(t, &f("no_existe.mp4")).unwrap_err().kind, ErrorKind::NotFound);
     assert_eq!(snip_core::probe_file(t, &f("audio_only.mp4")).unwrap_err().kind, ErrorKind::NoVideo);
     assert_eq!(snip_core::probe_file(t, &f("corrupt.mp4")).unwrap_err().kind, ErrorKind::Corrupt);

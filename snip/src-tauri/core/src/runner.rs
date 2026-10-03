@@ -111,25 +111,24 @@ fn drain_stderr(stderr: impl Read + Send + 'static) -> std::thread::JoinHandle<S
     })
 }
 
-/// Corre FFmpeg escribiendo en `partial` y reporta el progreso. Si se cancela o
-/// falla, borra `partial`. Si sale bien, lo renombra a `final_path`.
-pub fn run_ffmpeg_to_file(
+/// Corre FFmpeg (opcionalmente en `cwd`) reportando el progreso de `-progress pipe:1`.
+/// Devuelve el stderr si terminó bien; si falla o se cancela, el error ya clasificado.
+pub fn run_ffmpeg(
     tools: &Tools,
     args: &[String],
-    partial: &Path,
-    final_path: &Path,
+    cwd: Option<&Path>,
     job: &JobControl,
     mut on_progress: impl FnMut(ProgressSample),
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     if job.is_cancelled() {
         return Err(AppError::new(ErrorKind::Cancelled));
     }
-    let mut child = command(&tools.ffmpeg)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(spawn_error)?;
+    let mut cmd = command(&tools.ffmpeg);
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let mut child = cmd.spawn().map_err(spawn_error)?;
 
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
@@ -157,25 +156,54 @@ pub fn run_ffmpeg_to_file(
         child.wait().map_err(|e| AppError::from_io(&e))?
     };
     let stderr_text = stderr_handle.join().unwrap_or_default();
-
-    let cleanup = || {
-        // En Windows el handle puede tardar un instante en liberarse.
-        for _ in 0..20 {
-            match std::fs::remove_file(partial) {
-                Ok(()) => return,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
-            }
-        }
-    };
-
     if job.is_cancelled() {
-        cleanup();
         return Err(AppError::new(ErrorKind::Cancelled));
     }
     if !status.success() {
-        cleanup();
         return Err(AppError::with_detail(classify_ffmpeg_stderr(&stderr_text), stderr_text));
+    }
+    Ok(stderr_text)
+}
+
+/// Borra un archivo con reintentos (en Windows el handle puede tardar en liberarse).
+pub fn remove_with_retry(path: &Path) {
+    for _ in 0..20 {
+        match std::fs::remove_file(path) {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+}
+
+/// Corre FFmpeg escribiendo en `partial` y reporta el progreso. Si se cancela o
+/// falla, borra `partial`. Si sale bien, lo renombra a `final_path`.
+pub fn run_ffmpeg_to_file(
+    tools: &Tools,
+    args: &[String],
+    partial: &Path,
+    final_path: &Path,
+    job: &JobControl,
+    on_progress: impl FnMut(ProgressSample),
+) -> Result<(), AppError> {
+    run_ffmpeg_to_file_in(tools, args, None, partial, final_path, job, on_progress)
+}
+
+/// Igual que [`run_ffmpeg_to_file`], corriendo FFmpeg en `cwd`.
+pub fn run_ffmpeg_to_file_in(
+    tools: &Tools,
+    args: &[String],
+    cwd: Option<&Path>,
+    partial: &Path,
+    final_path: &Path,
+    job: &JobControl,
+    on_progress: impl FnMut(ProgressSample),
+) -> Result<(), AppError> {
+    let result = run_ffmpeg(tools, args, cwd, job, on_progress);
+    let cleanup = || remove_with_retry(partial);
+    if let Err(e) = result {
+        cleanup();
+        return Err(e);
     }
     let size = std::fs::metadata(partial).map(|m| m.len()).unwrap_or(0);
     if size == 0 {

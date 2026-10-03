@@ -1,14 +1,27 @@
 //! Núcleo de Snip: todo lo que habla con FFmpeg/FFprobe, sin dependencias de UI.
 //! Así se puede testear (unit + integración con FFmpeg real) en cualquier plataforma.
 
+pub mod audio;
+pub mod compile;
 pub mod encoder;
 pub mod error;
 pub mod export;
+pub mod fast;
+pub mod filters;
+pub mod graph;
+pub mod heavy;
+pub mod migrate;
 pub mod naming;
 pub mod probe;
 pub mod progress;
+pub mod project;
+pub mod project_export;
 pub mod runner;
 pub mod scale;
+pub mod sizing;
+pub mod timeline;
+#[cfg(test)]
+pub(crate) mod testutil;
 
 use encoder::Encoder;
 use error::{AppError, ErrorKind};
@@ -21,10 +34,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-/// Lee los metadatos de un MP4.
+/// Lee los metadatos de un video (MP4, MOV, MKV o WebM).
 pub fn probe_file(tools: &Tools, path: &Path) -> Result<MediaInfo, AppError> {
-    if !naming::is_mp4(path) {
-        return Err(AppError::new(ErrorKind::NotMp4));
+    if !naming::is_video(path) {
+        return Err(AppError::new(ErrorKind::UnsupportedFormat));
     }
     if !path.is_file() {
         return Err(AppError::new(ErrorKind::NotFound));
@@ -32,6 +45,67 @@ pub fn probe_file(tools: &Tools, path: &Path) -> Result<MediaInfo, AppError> {
     let p = path.to_string_lossy();
     let out = runner::run_capture(&tools.ffprobe, &probe::probe_args(&p))?;
     probe::parse_probe(&String::from_utf8_lossy(&out), &p)
+}
+
+/// Lee cualquier archivo que se pueda sumar a un proyecto (video, audio o imagen).
+pub fn probe_media(tools: &Tools, path: &Path, id: &str) -> Result<project::MediaRef, AppError> {
+    use project::{MediaKind, MediaRef};
+    if !path.is_file() {
+        return Err(AppError::new(ErrorKind::NotFound));
+    }
+    let p = path.to_string_lossy().into_owned();
+    if naming::is_video(path) {
+        let m = probe_file(tools, path)?;
+        return Ok(MediaRef {
+            id: id.into(),
+            path: p,
+            kind: MediaKind::Video,
+            duration: m.duration,
+            width: m.width,
+            height: m.height,
+            fps: m.fps,
+            fps_num: m.fps_num,
+            fps_den: m.fps_den,
+            has_audio: m.has_audio,
+            video_codec: Some(m.video_codec),
+            audio_codec: m.audio_codec,
+            rotation: m.rotation,
+            size_bytes: m.size_bytes,
+        });
+    }
+    let out = runner::run_capture(&tools.ffprobe, &probe::probe_args(&p))?;
+    let json = String::from_utf8_lossy(&out);
+    let empty = |kind| MediaRef {
+        id: id.into(),
+        path: p.clone(),
+        kind,
+        duration: 0.0,
+        width: 0,
+        height: 0,
+        fps: 30.0,
+        fps_num: 30,
+        fps_den: 1,
+        has_audio: false,
+        video_codec: None,
+        audio_codec: None,
+        rotation: 0,
+        size_bytes: None,
+    };
+    if naming::is_audio(path) {
+        let a = probe::parse_audio_probe(&json)?;
+        return Ok(MediaRef {
+            duration: a.duration,
+            has_audio: true,
+            audio_codec: Some(a.codec),
+            size_bytes: a.size_bytes,
+            ..empty(MediaKind::Audio)
+        });
+    }
+    if naming::is_image(path) {
+        let (w, h) = probe::parse_image_probe(&json)?;
+        return Ok(MediaRef { width: w, height: h, ..empty(MediaKind::Image) });
+    }
+    Err(AppError::new(ErrorKind::UnsupportedFormat))
 }
 
 /// Tiempos de los keyframes del primer stream de video.

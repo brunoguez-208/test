@@ -23,6 +23,18 @@ pub enum ErrorKind {
     FpsIncreaseNotConfirmed,
     FfmpegMissing,
     Busy,
+    /// Formato de archivo que Snip no abre.
+    UnsupportedFormat,
+    /// Proyecto dañado o que no es de Snip.
+    BadProject,
+    /// Proyecto de una versión más nueva u operación no soportada.
+    Unsupported,
+    /// El proyecto no tiene audio (para exportar MP3).
+    NoAudio,
+    /// Falta un archivo usado por el proyecto (se movió o se borró).
+    MediaMissing,
+    /// No se pudo descargar algo (modelo de subtítulos).
+    Network,
     Unknown,
 }
 
@@ -51,6 +63,12 @@ impl ErrorKind {
             }
             ErrorKind::FfmpegMissing => "Falta FFmpeg en la instalación de Snip. Reinstalá la app.",
             ErrorKind::Busy => "Ya hay una exportación en curso.",
+            ErrorKind::UnsupportedFormat => "Ese formato no se puede abrir. Snip abre MP4, MOV, MKV y WebM.",
+            ErrorKind::BadProject => "El proyecto está dañado o no es un proyecto de Snip.",
+            ErrorKind::Unsupported => "Esto no se puede hacer con esta versión de Snip.",
+            ErrorKind::NoAudio => "El proyecto no tiene audio.",
+            ErrorKind::MediaMissing => "No encontramos un archivo del proyecto. Puede que se haya movido o borrado.",
+            ErrorKind::Network => "No se pudo descargar. Revisá la conexión a internet y probá de nuevo.",
             ErrorKind::Unknown => "Algo salió mal al procesar el video.",
         }
     }
