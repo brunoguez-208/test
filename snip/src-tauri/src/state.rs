@@ -94,6 +94,17 @@ pub fn resolve_whisper_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join("whisper")
 }
 
+/// Pack de sonidos: junto al ejecutable, en `sfx/` (así lo deja el instalador).
+pub fn resolve_sfx_dir() -> PathBuf {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let installed = exe_dir.join("sfx");
+    if installed.is_dir() {
+        return installed;
+    }
+    // Desarrollo: src-tauri/sfx.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sfx")
+}
+
 impl AppState {
     pub fn new(tools: Tools, cache_dir: PathBuf, data_dir: PathBuf, launch_file: Option<String>) -> Self {
         for d in ["proxies", "heavy", "tmp", "raster"] {

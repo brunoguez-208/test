@@ -20,6 +20,12 @@ import type {
   RecentFile,
 } from "./types";
 
+export interface SfxInfo {
+  name: string;
+  path: string;
+  duration: number;
+}
+
 export const api = {
   takeLaunchFile: () => invoke<string | null>("take_launch_file"),
   showMainWindow: () => invoke<void>("show_main_window"),
@@ -31,6 +37,7 @@ export const api = {
   requestThumbnails: (group: string, generation: number, items: { path: string; time: number }[], height: number) =>
     invoke<void>("request_thumbnails", { group, generation, items, height }),
   getWaveform: (path: string) => invoke<string>("get_waveform", { path }),
+  listSfx: () => invoke<SfxInfo[]>("list_sfx"),
   analyzeAudio: (path: string, tracks: number) => invoke<{ rate: number; level: string; onset: string }>("analyze_audio", { path, tracks }),
   analyzeLoudness: (path: string, start: number, duration: number) => invoke<Loudness>("analyze_loudness", { path, start, duration }),
   createPreviewProxy: (path: string, duration: number, fps: number, tracks?: number[], transfer?: string | null) =>

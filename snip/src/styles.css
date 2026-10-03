@@ -793,6 +793,9 @@ kbd.kbd {
 .tl-music { cursor: grab; border-radius: 4px; background: color-mix(in srgb, #c86bfa 22%, transparent); color: #d9a3ff; }
 :root[data-theme="light"] .tl-music { color: #8a3bc4; }
 .eyedropper-layer { cursor: crosshair; }
+.sfx-row { transition: background-color 83ms linear; }
+.sfx-row:hover { background: var(--subtle-fill-hover); }
+.sfx-row.is-playing .sfx-icon { color: var(--accent-text, var(--accent-fill)); }
 .mask-frame { outline: 1px dashed rgb(255 255 255 / 0.5); }
 .mask-rect.is-circle { border-radius: 50%; }
 .eyedropper-hint { background: rgb(0 0 0 / 0.65); color: #fff; }

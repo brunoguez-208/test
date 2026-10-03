@@ -20,8 +20,16 @@ function stemOf(p: string) {
   return b.replace(/\.[^.]+$/, "");
 }
 
+/** Pack de sonidos (mismos nombres y largos que src-tauri/sfx). */
+const MOCK_SFX: [string, number][] = [
+  ["boom", 1.6], ["click", 0.05], ["ding", 1.2], ["glitch", 0.45], ["impact", 0.9],
+  ["notification", 0.54], ["pop", 0.16], ["riser", 2], ["swish", 0.35], ["whoosh", 0.7],
+];
+
 function mediaFor(path: string, id: string): MediaRef {
   const e = ext(path);
+  const sfx = MOCK_SFX.find(([n]) => path.endsWith(`\\sfx\\${n}.wav`));
+  if (sfx) return { id, path, kind: "audio", duration: sfx[1], width: 0, height: 0, fps: 30, fpsNum: 30, fpsDen: 1, hasAudio: true, videoCodec: null, audioCodec: "pcm_s16le", rotation: 0 };
   if (["mp3", "m4a", "wav", "ogg", "flac", "opus", "aac"].includes(e)) {
     return { id, path, kind: "audio", duration: 60, width: 0, height: 0, fps: 30, fpsNum: 30, fpsDen: 1, hasAudio: true, videoCodec: null, audioCodec: "mp3", rotation: 0 };
   }
@@ -352,6 +360,8 @@ export function installTauriMock() {
           });
           return null;
         }
+        case "list_sfx":
+          return MOCK_SFX.map(([name, duration]) => ({ name, path: `C:\\Program Files\\Snip\\sfx\\${name}.wav`, duration }));
         case "analyze_audio":
           await new Promise((r) => setTimeout(r, Number(params.get("analyzeMs") ?? 200)));
           return fakeAnalysis(String(a.path));

@@ -170,6 +170,7 @@ pub fn run() {
             commands::request_thumbnails,
             commands::get_waveform,
             commands::analyze_audio,
+            commands::list_sfx,
             commands::analyze_loudness,
             commands::create_preview_proxy,
             commands::cancel_proxy,

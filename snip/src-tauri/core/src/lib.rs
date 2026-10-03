@@ -21,6 +21,7 @@ pub mod progress;
 pub mod queue;
 pub mod analysis;
 pub mod chroma;
+pub mod sfx;
 pub mod fx;
 pub mod ramp;
 pub mod raster;

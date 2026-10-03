@@ -17,6 +17,8 @@ import { quantizeThumbTime, relinkMedia, requestThumbs, thumbKey } from "../../s
 import { Button, IconButton } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { Tooltip } from "../ui/Tooltip";
+import { Segmented } from "../ui/Segmented";
+import { Sounds } from "./Sounds";
 
 export const MEDIA_MIME = "application/x-snip-media";
 
@@ -118,6 +120,7 @@ const MediaCard = memo(function MediaCard({ m, uses, missing }: { m: MediaRef; u
 });
 
 export function Library({ project }: { project: Project }) {
+  const [view, setView] = useState<"media" | "sounds">("media");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<LibrarySort>("added");
   const missing = useEditor((s) => activeTab(s)?.missing ?? []);
@@ -147,24 +150,43 @@ export function Library({ project }: { project: Project }) {
           <Dismiss16Regular />
         </IconButton>
       </div>
-      <div className="flex flex-col gap-2 px-3 pb-2">
-        <label className="tc-input relative flex h-8 items-center gap-2 rounded-[4px] px-2">
-          <Search16Regular className="shrink-0 text-[var(--text-tertiary)]" />
-          <input className="t-body min-w-0 flex-1 bg-transparent outline-none" placeholder="Buscar" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar en la biblioteca" data-testid="lib-search" />
-        </label>
-        <Select<LibrarySort> label="Ordenar por" value={sort} options={SORTS} onChange={setSort} testId="lib-sort" />
+      <div className="px-3 pb-2">
+        <Segmented<"media" | "sounds">
+          label="Biblioteca"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "media", label: "Medios" },
+            { value: "sounds", label: "Sonidos" },
+          ]}
+          size="sm"
+          testId="lib-view"
+        />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {items.length ? (
-          <ul className="grid grid-cols-2 gap-1" data-testid="lib-list">
-            {items.map((m) => (
-              <MediaCard key={m.id} m={m} uses={usage.get(m.id) ?? 0} missing={missing.includes(m.id)} />
-            ))}
-          </ul>
-        ) : (
-          <p className="t-caption px-2 pt-4 text-center text-[var(--text-tertiary)]">{query ? "Nada con ese nombre." : "Arrastrá o pegá videos, audio e imágenes acá."}</p>
-        )}
-      </div>
+      {view === "sounds" ? (
+        <Sounds />
+      ) : (
+        <>
+          <div className="flex flex-col gap-2 px-3 pb-2">
+            <label className="tc-input relative flex h-8 items-center gap-2 rounded-[4px] px-2">
+              <Search16Regular className="shrink-0 text-[var(--text-tertiary)]" />
+              <input className="t-body min-w-0 flex-1 bg-transparent outline-none" placeholder="Buscar" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar en la biblioteca" data-testid="lib-search" />
+            </label>
+            <Select<LibrarySort> label="Ordenar por" value={sort} options={SORTS} onChange={setSort} testId="lib-sort" />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            {items.length ? (
+              <ul className="grid grid-cols-2 gap-1" data-testid="lib-list">
+                {items.map((m) => (
+                  <MediaCard key={m.id} m={m} uses={usage.get(m.id) ?? 0} missing={missing.includes(m.id)} />
+                ))}
+              </ul>
+            ) : (
+              <p className="t-caption px-2 pt-4 text-center text-[var(--text-tertiary)]">{query ? "Nada con ese nombre." : "Arrastrá o pegá videos, audio e imágenes acá."}</p>
+            )}
+          </div>
+        </>
+      )}
     </motion.aside>
   );
 }

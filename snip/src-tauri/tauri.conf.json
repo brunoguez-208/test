@@ -63,7 +63,8 @@
     "resources": {
       "binaries/ffmpeg/": "ffmpeg/",
       "icons/snip-file.ico": "snip-file.ico",
-      "binaries/whisper/": "whisper/"
+      "binaries/whisper/": "whisper/",
+      "sfx/": "sfx/"
     },
     "fileAssociations": [
       {

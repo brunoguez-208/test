@@ -212,6 +212,34 @@ pub async fn analyze_audio(app: AppHandle, path: String, tracks: Option<u32>) ->
     .await
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SfxInfo {
+    pub name: String,
+    pub path: String,
+    pub duration: f64,
+}
+
+/// Sonidos del pack incluido (WAV), con su duración (del encabezado).
+#[tauri::command]
+pub fn list_sfx() -> Vec<SfxInfo> {
+    let dir = crate::state::resolve_sfx_dir();
+    let mut out: Vec<SfxInfo> = std::fs::read_dir(&dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("wav")))
+                .map(|e| {
+                    let path = e.path();
+                    let duration = std::fs::read(&path).ok().and_then(|b| snip_core::sfx::wav_duration(&b)).unwrap_or(0.0);
+                    SfxInfo { name: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), path: path.to_string_lossy().into_owned(), duration }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
 /// Primera pasada de loudnorm (para normalizar un clip).
 #[tauri::command]
 pub async fn analyze_loudness(state: State<'_, AppState>, path: String, start: f64, duration: f64) -> CmdResult<Loudness> {

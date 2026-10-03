@@ -212,3 +212,26 @@ fn analysis_finds_level_silence_and_attacks() {
     let b = snip_core::analysis::analyze(&fx().tools, std::path::Path::new(&p("dos.m4a")), 2).unwrap();
     assert!((b.level[50] as f32 / 2.0 - 100.0) > -25.0, "{}", b.level[50] as f32 / 2.0 - 100.0);
 }
+
+#[test]
+fn bundled_sound_exports_where_it_was_placed() {
+    guard!();
+    let sfx = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../sfx/impact.wav");
+    let m = snip_core::probe_media(&fx().tools, &sfx, "s1").unwrap();
+    assert!(m.has_audio && (m.duration - 0.9).abs() < 0.02, "{m:?}");
+    let mut p = base();
+    p.clips[0].audio.muted = true;
+    p.media.push(m);
+    p.music.push(audio_clip("a1", "s1", 2.0, 0.9, 0));
+    let o = export(p, "con-impacto.mp4");
+    let level = |t: f64, d: f64| {
+        let out = Command::new(&fx().tools.ffmpeg)
+            .args(["-v", "info", "-ss", &format!("{t}"), "-t", &format!("{d}"), "-i", &o, "-map", "0:a:0", "-af", "astats=metadata=0:measure_perchannel=none:measure_overall=Peak_level", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stderr).lines().filter_map(|l| l.split("Peak level dB:").nth(1)).filter_map(|v| v.trim().parse::<f64>().ok()).next_back().unwrap_or(-120.0)
+    };
+    assert!(level(0.5, 1.0) < -60.0, "antes, silencio");
+    assert!(level(2.0, 0.3) > -6.0, "el golpe suena en 2 s: {}", level(2.0, 0.3));
+    assert!(level(3.5, 1.0) < -60.0, "después, silencio");
+}

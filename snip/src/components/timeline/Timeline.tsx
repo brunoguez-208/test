@@ -1,6 +1,8 @@
 import { currentSilences } from "../../store/autoTools";
 import { dropTargetAt, setDropGeo } from "./dropTarget";
 import { MEDIA_MIME } from "../library/Library";
+import { SFX_MIME } from "../library/Sounds";
+import { importFilesAt } from "../../store/clipboard";
 import { RANGE_MIME } from "../library/SourceViewer";
 import { placeFromLibrary } from "../../store/library";
 import { TrackHeaders } from "./TrackHeaders";
@@ -384,7 +386,7 @@ export function Timeline({ project }: { project: Project }) {
           }}
           onDragOver={(e) => {
             // Un archivo de la biblioteca: guía en la pista y el tiempo bajo el puntero.
-            if (!e.dataTransfer.types.includes(MEDIA_MIME)) return;
+            if (!e.dataTransfer.types.includes(MEDIA_MIME) && !e.dataTransfer.types.includes(SFX_MIME)) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
             const t = dropTargetAt(e.clientX, e.clientY);
@@ -394,6 +396,15 @@ export function Timeline({ project }: { project: Project }) {
             if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) useEditor.setState({ dropTarget: null });
           }}
           onDrop={(e) => {
+            // Un sonido del pack: se agrega como audio en la pista bajo el puntero.
+            const sfx = e.dataTransfer.getData(SFX_MIME);
+            if (sfx) {
+              e.preventDefault();
+              const t = dropTargetAt(e.clientX, e.clientY);
+              useEditor.setState({ dropTarget: null });
+              void importFilesAt([sfx], t?.time ?? useEditor.getState().time, { target: t ?? undefined });
+              return;
+            }
             const id = e.dataTransfer.getData(MEDIA_MIME);
             if (!id) return;
             e.preventDefault();

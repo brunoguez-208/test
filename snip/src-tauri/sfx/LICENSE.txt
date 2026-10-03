@@ -1,0 +1,27 @@
+Snip — pack de sonidos
+======================
+
+Archivos: whoosh.wav, swish.wav, pop.wav, click.wav, impact.wav, boom.wav,
+riser.wav, ding.wav, notification.wav, glitch.wav
+
+Origen: todos fueron sintetizados por el programa scripts/make-sfx.mjs del
+proyecto Snip (osciladores, ruido generado con semilla fija, filtros y
+envolventes). No contienen grabaciones ni muestras de terceros. Correr el
+script de nuevo genera exactamente los mismos archivos.
+
+Licencia: CC0 1.0 Universal (dominio público).
+
+En la medida en que la ley lo permita, los autores renuncian a todos los
+derechos de autor y derechos conexos sobre estos sonidos. Podés copiarlos,
+modificarlos, distribuirlos y usarlos, incluso con fines comerciales, sin
+pedir permiso ni dar atribución.
+
+Texto legal completo: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+---
+
+Snip sound pack — CC0 1.0 Universal. To the extent possible under law, the
+authors have waived all copyright and related or neighboring rights to these
+sounds. They were synthesized from scratch by scripts/make-sfx.mjs and contain
+no third-party recordings or samples.
+https://creativecommons.org/publicdomain/zero/1.0/

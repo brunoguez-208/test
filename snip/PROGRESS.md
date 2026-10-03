@@ -337,7 +337,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
 - [x] B6. Máscaras
 - [x] B7. Herramientas automáticas (jugadas, silencios, beats)
-- [ ] B8. Pack de sonidos (CC0 / sintetizados)
+- [x] B8. Pack de sonidos (CC0 / sintetizados)
 - [ ] Cierre: tests completos, instalador final, resumen y checklist manual
 
 ### Notas de B1 (biblioteca de medios)
@@ -428,3 +428,15 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Arreglo de paso: `deleteRange` no borraba nada si los bordes no caían en un cuadro.
 - Tests: unitarios Rust (FFT, nivel, ataques), integración (tono/silencio/golpes reales y dos
   pistas), Vitest (`autoTools.test.ts`) y Playwright (`auto-tools.spec.ts`).
+
+### Notas de B8 (pack de sonidos)
+- 10 sonidos: whoosh, swish rápido, pop, clic, impacto, explosión, transición (sube), ding,
+  notificación y glitch. **Todos sintetizados por `scripts/make-sfx.mjs`** (osciladores, ruido
+  con semilla fija, filtros y envolventes): nada grabado ni de terceros, y correr el script
+  genera exactamente los mismos archivos. Licencia CC0 en `src-tauri/sfx/LICENSE.txt`, que
+  viaja con el instalador junto a los WAV (`bundle.resources`).
+- Biblioteca → "Sonidos": pasar el mouse los escucha (al salir se cortan), se arrastran a
+  cualquier pista (van como audio en la fila bajo el puntero) y "+" los agrega en el playhead.
+- Tests: Rust (lectura de WAV, que el pack esté y cada archivo figure en la licencia),
+  integración (el impacto suena exactamente donde se puso al exportar) y Playwright
+  (`sounds.spec.ts`).
