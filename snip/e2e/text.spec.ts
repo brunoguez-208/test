@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { focusBody, open, openQueue, project, seek } from "./helpers";
+import { focusBody, open, openQueue, project, seek, settled } from "./helpers";
 
 // Tanda 2: textos y títulos, subtítulos .srt y logo / marca de agua.
 const SHOTS = "e2e/screenshots";
@@ -88,6 +88,8 @@ test.describe("textos", () => {
     await page.mouse.up();
     await expect.poll(async () => (await project(page))?.overlays[0].start).toBeGreaterThan(1);
     expect((await project(page))!.overlays[0].lane).toBe(1);
+    // El bloque se acomoda con una animación: esperar a que quede quieto.
+    await settled(page, "overlay-trim-out");
     const t = (await page.getByTestId("overlay-trim-out").boundingBox())!;
     await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
     await page.mouse.down();
