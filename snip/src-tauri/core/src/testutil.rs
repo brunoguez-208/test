@@ -40,6 +40,8 @@ pub fn clip(id: &str, a: f64, b: f64) -> Clip {
         audio: ClipAudio::default(),
         video: ClipVideo::default(),
         transition: None,
+        speed_keys: vec![],
+        ramp_audio: RampAudio::Mute,
     }
 }
 

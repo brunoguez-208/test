@@ -157,6 +157,14 @@ export interface Transition {
   duration: number;
 }
 
+/** Punto de una rampa de velocidad: t en segundos del original desde la entrada. */
+export interface SpeedKey {
+  id: number;
+  t: number;
+  v: number;
+}
+export type RampAudio = "mute" | "pitch";
+
 export interface Clip {
   id: string;
   mediaId: string;
@@ -172,6 +180,10 @@ export interface Clip {
   audio: ClipAudio;
   video: ClipVideo;
   transition: Transition | null;
+  /** Rampa de velocidad: si hay puntos, mandan sobre `speed`. */
+  speedKeys?: SpeedKey[];
+  /** Audio durante la rampa: mudo (lo normal) o con el tono preservado. */
+  rampAudio?: RampAudio;
 }
 
 // --------------------------- Superposiciones (tanda 2) ---------------------------

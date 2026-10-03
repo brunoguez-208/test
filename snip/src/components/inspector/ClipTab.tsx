@@ -21,6 +21,7 @@ import { Toggle } from "../ui/Toggle";
 import { InfoBar } from "../ui/InfoBar";
 import { Empty, Field, Section, fmtNum } from "./Field";
 import { useTargetClip } from "./useTarget";
+import { RampEditor } from "./RampEditor";
 
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4];
 // Escala logarítmica: 0.25 → 0, 1 → 0.5, 4 → 1.
@@ -109,40 +110,45 @@ export function ClipTab({ project }: { project: Project }) {
       ) : (
         <>
           <Section title="Velocidad">
-            <Field label="Velocidad" aside={<span className="t-caption tabular text-[var(--text-secondary)]" data-testid="speed-value">{fmtNum(clip.speed, 2)}×</span>}>
-              <RangeSlider
-                label="Velocidad"
-                value={clip.speed}
-                min={0.25}
-                max={4}
-                step={0.05}
-                resetTo={1}
-                origin={1}
-                toPos={speedToPos}
-                fromPos={(p) => Math.round(posToSpeed(p) * 20) / 20}
-                onStart={gestureStart}
-                onEnd={gestureEnd}
-                onChange={(v) => setClip(clip.id, (c) => ({ ...c, speed: v }))}
-                testId="speed-slider"
-              />
-              <div className="flex gap-1">
-                {SPEEDS.map((s) => (
-                  <motion.button
-                    key={s}
-                    type="button"
-                    whileTap={{ scale: 0.95 }}
-                    className={`chip t-caption tabular flex-1 rounded-[4px] py-1 ${Math.abs(clip.speed - s) < 1e-6 ? "is-selected" : ""}`}
-                    onClick={() => setClip(clip.id, (c) => ({ ...c, speed: s }))}
-                    data-testid={`speed-${s}`}
-                  >
-                    {String(s).replace(".", ",")}×
-                  </motion.button>
-                ))}
-              </div>
-            </Field>
-            <p className="t-caption text-[var(--text-secondary)]">El audio mantiene el tono al cambiar la velocidad.</p>
+            {!clip.speedKeys?.length && (
+              <>
+                <Field label="Velocidad" aside={<span className="t-caption tabular text-[var(--text-secondary)]" data-testid="speed-value">{fmtNum(clip.speed, 2)}×</span>}>
+                  <RangeSlider
+                    label="Velocidad"
+                    value={clip.speed}
+                    min={0.25}
+                    max={4}
+                    step={0.05}
+                    resetTo={1}
+                    origin={1}
+                    toPos={speedToPos}
+                    fromPos={(p) => Math.round(posToSpeed(p) * 20) / 20}
+                    onStart={gestureStart}
+                    onEnd={gestureEnd}
+                    onChange={(v) => setClip(clip.id, (c) => ({ ...c, speed: v }))}
+                    testId="speed-slider"
+                  />
+                  <div className="flex gap-1">
+                    {SPEEDS.map((s) => (
+                      <motion.button
+                        key={s}
+                        type="button"
+                        whileTap={{ scale: 0.95 }}
+                        className={`chip t-caption tabular flex-1 rounded-[4px] py-1 ${Math.abs(clip.speed - s) < 1e-6 ? "is-selected" : ""}`}
+                        onClick={() => setClip(clip.id, (c) => ({ ...c, speed: s }))}
+                        data-testid={`speed-${s}`}
+                      >
+                        {String(s).replace(".", ",")}×
+                      </motion.button>
+                    ))}
+                  </div>
+                </Field>
+                <p className="t-caption text-[var(--text-secondary)]">El audio mantiene el tono al cambiar la velocidad.</p>
+              </>
+            )}
+            <RampEditor clip={clip} />
             <AnimatePresence initial={false}>
-              {clip.speed < 1 && (
+              {clip.speed < 1 && !clip.speedKeys?.length && (
                 <motion.div key="smooth" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
                   <Field inline label="Cámara lenta suave" hint="Inventa cuadros intermedios. Es lenta de procesar." testId="smooth-row">
                     <Toggle checked={clip.smoothSlowmo} onChange={(v) => setClip(clip.id, (c) => ({ ...c, smoothSlowmo: v }))} label="Cámara lenta suave" testId="smooth-toggle" />

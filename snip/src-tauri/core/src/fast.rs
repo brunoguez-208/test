@@ -20,6 +20,7 @@ pub struct FastPlan {
 fn clip_is_plain(c: &Clip) -> bool {
     c.kind == ClipKind::Video
         && (c.speed - 1.0).abs() < 1e-9
+        && c.speed_keys.is_empty()
         && !c.reverse
         && !c.smooth_slowmo
         && c.loop_mode == LoopMode::None

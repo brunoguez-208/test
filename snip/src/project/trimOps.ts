@@ -2,7 +2,7 @@
 
 import type { Project } from "./model";
 import { EditError, clipIndexAtTime, setFreezeDuration, trimClip, trimMusic } from "./ops";
-import { layout } from "./timeline";
+import { layout, sourceTime } from "./timeline";
 import { trimOverlay, updateCue } from "./overlayOps";
 import { isLocked } from "./tracks";
 
@@ -49,7 +49,7 @@ export function trimToPlayhead(p: Project, t: number, edge: TrimEdge, selection:
   }
   if (c.loopMode !== "none") throw new EditError("Para recortar un clip con repeticiones, primero quitá el loop.");
   // Tiempo del original en el playhead (con velocidad y reversa).
-  const src = c.reverse ? c.outPoint - u * c.speed : c.inPoint + u * c.speed;
+  const src = sourceTime(c, u);
   const r = trimClip(p, c.id, edge === "start" ? "in" : "out", src);
   // Al sacar el principio, el contenido que estaba en el playhead queda donde empezaba el clip.
   return [r, edge === "start" ? spans[i].start : t];

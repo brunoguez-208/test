@@ -7,6 +7,7 @@ import { canvasFpsExpr } from "./model";
 export function needsHeavy(c: Clip): boolean {
   if (c.kind === "freeze") return false;
   return (
+    !!c.speedKeys?.length ||
     c.reverse ||
     c.loopMode === "boomerang" ||
     (c.smoothSlowmo && c.speed < 1 - 1e-6) ||
@@ -29,6 +30,8 @@ export function heavySignature(c: Clip, p: Project): string {
     c.video.stabilize?.strength ?? null,
     c.video.denoise,
     c.audio.denoise,
+    c.speedKeys?.length ? c.speedKeys : null,
+    c.speedKeys?.length ? (c.rampAudio ?? "mute") : null,
     canvasFpsExpr(p.canvas),
   ]);
 }
@@ -36,6 +39,7 @@ export function heavySignature(c: Clip, p: Project): string {
 /** Por qué un clip se procesa aparte (para el aviso "preparando vista previa"). */
 export function heavyReason(c: Clip): string {
   if (c.video.stabilize) return "Estabilizando";
+  if (c.speedKeys?.length) return "Aplicando la rampa";
   if (c.smoothSlowmo && c.speed < 1) return "Interpolando cuadros";
   if (c.reverse || c.loopMode === "boomerang") return "Invirtiendo";
   return "Reduciendo ruido";

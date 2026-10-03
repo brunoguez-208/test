@@ -19,7 +19,7 @@ use crate::compile::{atempo_chain, num, Intermediate};
 use crate::encoder::Encoder;
 use crate::error::{AppError, ErrorKind};
 use crate::graph::s;
-use crate::project::{Clip, ClipKind, LoopMode, MediaRef};
+use crate::project::{Clip, ClipKind, LoopMode, MediaRef, RampAudio};
 use crate::runner::{self, JobControl, Tools};
 use crate::timeline;
 use std::collections::hash_map::DefaultHasher;
@@ -37,6 +37,7 @@ pub fn needs_heavy(c: &Clip) -> bool {
         || c.video.stabilize.is_some()
         || c.video.denoise > 1e-6
         || c.audio.denoise
+        || !c.speed_keys.is_empty()
 }
 
 /// Etapas de la etapa base (antes de invertir o cambiar la velocidad).
@@ -87,8 +88,8 @@ pub fn stage_keys(c: &Clip, fingerprint: u64, canvas_fps: &str, encoder: Encoder
     let src_of_next = base.clone().unwrap_or_else(|| key(&["src", &src]));
     let wants_rev = c.reverse || c.loop_mode == LoopMode::Boomerang;
     let rev = wants_rev.then(|| key(&["rev", &src_of_next]));
-    let speed = format!("{}|{}|{}", num(c.speed), c.smooth_slowmo && c.speed < 1.0, canvas_fps);
-    let changes_speed = (c.speed - 1.0).abs() > 1e-6;
+    let speed = format!("{}|{}|{}|{:?}|{:?}", num(c.speed), c.smooth_slowmo && c.speed < 1.0, canvas_fps, c.speed_keys, c.ramp_audio);
+    let changes_speed = (c.speed - 1.0).abs() > 1e-6 || !c.speed_keys.is_empty();
     let (forward, backward) = piece_directions(c);
     let fwd_speed = (forward && changes_speed).then(|| key(&["spd", &src_of_next, &speed]));
     let rev_speed = (backward && changes_speed).then(|| key(&["spd", rev.as_deref().unwrap_or(""), &speed]));
@@ -327,6 +328,9 @@ pub fn reverse_chunks(len: f64, width: u32, height: u32, fps: f64) -> Vec<(f64, 
 
 /// Velocidad (y cámara lenta suave con minterpolate).
 pub fn speed_args(src: &Source, c: &Clip, canvas_fps: &str, has_audio: bool, encoder: Encoder, gop: u32, out: &Path) -> Vec<String> {
+    if !c.speed_keys.is_empty() {
+        return ramp_args(src, c, canvas_fps, has_audio, encoder, gop, out);
+    }
     let (input, pre) = src.input(0.0, None);
     let mut a = head();
     a.extend(input);
@@ -346,6 +350,45 @@ pub fn speed_args(src: &Source, c: &Clip, canvas_fps: &str, has_audio: bool, enc
     }
     a.extend(piece_video_args(encoder, gop));
     a.extend(piece_audio_args(has_audio));
+    a.extend(tail_args(out));
+    a
+}
+
+/// Rampa de velocidad: `setpts` por tramos; el audio, mudo o con el tono
+/// preservado por tramo (`atempo` en cada uno).
+pub fn ramp_args(src: &Source, c: &Clip, canvas_fps: &str, has_audio: bool, encoder: Encoder, gop: u32, out: &Path) -> Vec<String> {
+    let (input, pre) = src.input(0.0, None);
+    let len = (c.out_point - c.in_point).max(1e-3);
+    let mut a = head();
+    a.extend(input);
+    // `round=up` (con base de tiempo fina): cada cuadro de salida muestra el último cuadro del original
+    // que ya empezó, igual que el preview al buscar `sourceTime`.
+    let vf = format!(
+        "trim=start={},setpts=PTS-STARTPTS,settb=1/1000000,{},fps={canvas_fps}:round=up,format={}",
+        num(pre),
+        crate::ramp::setpts(&c.speed_keys, len),
+        encoder.pix_fmt()
+    );
+    let with_audio = has_audio && c.ramp_audio == RampAudio::Pitch;
+    if with_audio {
+        // Pistas del original mezcladas igual que en el resto del render.
+        let tracks: &[u32] = match src {
+            Source::Original { tracks, .. } if !tracks.is_empty() => tracks,
+            _ => &[0],
+        };
+        let (ins, mix) = mix_inputs(0, tracks);
+        let ins: String = ins.iter().map(|i| format!("[{i}]")).collect();
+        let pre_mix = match mix {
+            Some(m) => format!("{ins}{m}[rm];"),
+            None => format!("{ins}anull[rm];"),
+        };
+        let graph = format!("{pre_mix}{}", crate::ramp::audio_graph(&c.speed_keys, len, pre, "rm", "ra"));
+        a.extend([s("-vf"), vf, s("-filter_complex"), graph, s("-map"), s("0:v:0"), s("-map"), s("[ra]")]);
+    } else {
+        a.extend([s("-vf"), vf, s("-map"), s("0:v:0")]);
+    }
+    a.extend(piece_video_args(encoder, gop));
+    a.extend(piece_audio_args(with_audio));
     a.extend(tail_args(out));
     a
 }
@@ -411,7 +454,8 @@ pub fn process_clip(
     let keys = stage_keys(c, fp, canvas_fps, encoder);
     let duration = timeline::clip_duration(c);
     let final_path = cache_dir.join(format!("{}.mp4", keys.final_key));
-    let has_audio = media.has_audio;
+    // Rampa con audio mudo: el intermedio no lleva sonido.
+    let has_audio = media.has_audio && (c.speed_keys.is_empty() || c.ramp_audio == RampAudio::Pitch);
     if final_path.is_file() {
         touch(&final_path);
         on_progress(100.0);

@@ -95,6 +95,13 @@ pub fn sanitize(p: &mut Project) {
         c.speed = finite_or(c.speed, 1.0).clamp(MIN_SPEED, MAX_SPEED);
         c.in_point = finite_or(c.in_point, 0.0).max(0.0);
         c.out_point = finite_or(c.out_point, c.in_point).max(c.in_point);
+        let len = (c.out_point - c.in_point).max(0.0);
+        c.speed_keys.retain(|k| k.t.is_finite() && k.v.is_finite());
+        for k in &mut c.speed_keys {
+            k.t = k.t.clamp(0.0, len);
+            k.v = k.v.clamp(crate::ramp::MIN_SPEED, crate::ramp::MAX_SPEED);
+        }
+        c.speed_keys.sort_by(|a, b| a.t.total_cmp(&b.t));
         c.loop_count = c.loop_count.clamp(1, MAX_LOOP_COUNT);
         c.freeze_duration = finite_or(c.freeze_duration, 0.0).clamp(0.0, 3600.0);
         if c.speed >= 1.0 {

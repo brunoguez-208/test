@@ -12,6 +12,7 @@ pub const EPS: f64 = 1.0 / 240.0;
 pub fn segment_duration(c: &Clip) -> f64 {
     match c.kind {
         ClipKind::Freeze => c.freeze_duration.max(0.0),
+        ClipKind::Video if !c.speed_keys.is_empty() => crate::ramp::duration(&c.speed_keys, (c.out_point - c.in_point).max(0.0)),
         ClipKind::Video => ((c.out_point - c.in_point).max(0.0)) / c.speed.clamp(0.01, 100.0),
     }
 }
@@ -94,7 +95,7 @@ pub fn source_time(c: &Clip, u: f64) -> f64 {
         _ => true,
     };
     let forward = forward != c.reverse;
-    let off = p * c.speed;
+    let off = if c.speed_keys.is_empty() { p * c.speed } else { crate::ramp::source_offset(&c.speed_keys, c.out_point - c.in_point, p) };
     if forward {
         (c.in_point + off).min(c.out_point)
     } else {

@@ -604,3 +604,36 @@ fn image_effects_layers_zones_and_pip_together() {
     let (r1, g1, b1) = yellow(1.0);
     assert!(r1 > 150 && g1 > 150 && b1 < 120, "amarillo: {r1},{g1},{b1}");
 }
+
+#[test]
+fn speed_ramp_matches_the_timeline_length_with_or_without_audio() {
+    guard!();
+    for (audio, name) in [(RampAudio::Mute, "rampa-muda.mp4"), (RampAudio::Pitch, "rampa-tono.mp4")] {
+        let mut c = clip("c1", "m1", 1.0, 5.0);
+        c.speed_keys = snip_core::ramp::preset("slowmo-middle", 4.0);
+        c.ramp_audio = audio;
+        let p = project(vec![media("m1", "a.mp4")], vec![c.clone()]);
+        let expected = snip_core::timeline::clip_duration(&c);
+        assert!(expected > 6.0, "la cámara lenta alarga: {expected}");
+        let o = run(p, name);
+        let pr = probe(&o.output);
+        assert!((pr.duration - expected).abs() < 0.1, "{name}: {} vs {expected}", pr.duration);
+        assert_eq!(pr.fps.round(), 30.0);
+        // Con tono preservado suena el tono de 440 Hz; muda, silencio.
+        let loud = luma_free_audio_level(&o.output);
+        if audio == RampAudio::Pitch {
+            assert!(loud > -40.0, "{name}: {loud}");
+        } else {
+            assert!(loud < -70.0, "{name}: {loud}");
+        }
+    }
+}
+
+/// Nivel RMS (dB) del audio exportado.
+fn luma_free_audio_level(p: &str) -> f64 {
+    let out = Command::new(&fx().tools.ffmpeg)
+        .args(["-v", "info", "-i", p, "-map", "0:a:0", "-af", "astats=metadata=0:measure_perchannel=none:measure_overall=RMS_level", "-f", "null", "-"])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stderr).lines().filter_map(|l| l.split("RMS level dB:").nth(1)).filter_map(|v| v.trim().parse().ok()).next_back().unwrap_or(-120.0)
+}

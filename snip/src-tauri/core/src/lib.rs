@@ -19,6 +19,7 @@ pub mod package;
 pub mod probe;
 pub mod progress;
 pub mod queue;
+pub mod ramp;
 pub mod raster;
 pub mod project;
 pub mod project_export;

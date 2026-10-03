@@ -14,6 +14,7 @@ import { fitCanvas, insertMedia, newProject, setTransition, updateClip } from ".
 import { LOOKS } from "../src/engine/color";
 import { addBlur, addImage, addPip, addText, setCues, updateOverlay } from "../src/project/overlayOps";
 import { layout } from "../src/project/timeline";
+import { rampPreset } from "../src/project/ramp";
 
 const FF_DIR = process.env.SNIP_FFMPEG_DIR ?? "/opt/ffmpeg9/bin";
 const FFMPEG = join(FF_DIR, "ffmpeg");
@@ -151,6 +152,7 @@ async function check(page: Page, p: Project, frames: Record<string, number>, tag
       await test.info().attach(`${r.label}-export.png`, { body: readFileSync(exp[ks.indexOf(r.frame)]), contentType: "image/png" });
     }
   }
+  console.log(`[paridad ${tag}] ` + results.map((r) => `${r.label}=${r.ssim.toFixed(3)}`).join(" "));
   // Control: el mismo cuadro del preview contra uno corrido 3 cuadros del export
   // tiene que puntuar claramente peor (si no, el SSIM no estaría midiendo nada).
   if (control) {
@@ -160,7 +162,6 @@ async function check(page: Page, p: Project, frames: Record<string, number>, tag
     console.log(`[paridad ${tag}] control(+3 cuadros)=${c.toFixed(3)}`);
     expect(c).toBeLessThan(results[ks.length - 2].ssim - 0.01);
   }
-  console.log(`[paridad ${tag}] ` + results.map((r) => `${r.label}=${r.ssim.toFixed(3)}`).join(" "));
   expect(results.filter((r) => r.ssim < min)).toEqual([]);
 }
 
@@ -201,6 +202,26 @@ test("paridad: velocidad, encuadre con barras y fundidos de entrada/salida", asy
 });
 
 /** Aplica cambios de imagen a un clip (y reajusta el lienzo como hace el editor). */
+test("paridad: rampas de velocidad (cada preset, a lo largo de la curva)", async ({ page }) => {
+  test.setTimeout(400_000);
+  // Cada preset en su propio proyecto: el clip arranca en un cuadro exacto (en la app
+  // el preview reproduce el mismo intermedio que exporta; acá se mide la matemática).
+  const cases: [string, "slowmo-middle" | "speed-up" | "slow-down", string, number][] = [
+    ["lenta", "slowmo-middle", "a.webm", 4],
+    ["acelera", "speed-up", "b.webm", 4],
+    ["frena", "slow-down", "a.webm", 3],
+  ];
+  for (const [name, preset, file, len] of cases) {
+    let p = base([[file, 0, len]]);
+    p = updateClip(p, p.clips[0].id, (c) => ({ ...c, speedKeys: rampPreset(preset, len) }));
+    const fps = canvasFps(p.canvas);
+    const d = layout(p.clips)[0].duration;
+    const frames: Record<string, number> = {};
+    for (const f of [0.1, 0.3, 0.5, 0.7, 0.9]) frames[`${name}-${Math.round(f * 100)}`] = Math.round(d * f * fps);
+    await check(page, p, frames, `rampa-${name}`, 0.95, name === "acelera");
+  }
+});
+
 function withVideo(p: Project, i: number, v: Partial<Project["clips"][number]["video"]>): Project {
   return fitCanvas(updateClip(p, p.clips[i].id, (c) => ({ ...c, video: { ...c.video, ...v } })));
 }

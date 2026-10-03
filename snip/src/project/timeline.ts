@@ -3,12 +3,14 @@
 // salvo que tenga transición de entrada, que solapa los dos clips.
 
 import type { Clip, Project } from "./model";
+import { rampDuration, sourceOffset } from "./ramp";
 
 export const EPS = 1 / 240;
 
 /** Duración de una pasada del clip (sin repeticiones), con la velocidad aplicada. */
 export function segmentDuration(c: Clip): number {
   if (c.kind === "freeze") return Math.max(0, c.freezeDuration);
+  if (c.speedKeys?.length) return rampDuration(c.speedKeys, Math.max(0, c.outPoint - c.inPoint));
   return Math.max(0, c.outPoint - c.inPoint) / Math.min(100, Math.max(0.01, c.speed));
 }
 
@@ -68,7 +70,7 @@ export function sourceTime(c: Clip, u: number): number {
   const p = uu - pass * seg;
   let forward = c.loopMode === "boomerang" ? pass % 2 === 0 : true;
   if (c.reverse) forward = !forward;
-  const off = p * c.speed;
+  const off = c.speedKeys?.length ? sourceOffset(c.speedKeys, c.outPoint - c.inPoint, p) : p * c.speed;
   return forward ? Math.min(c.outPoint, c.inPoint + off) : Math.max(c.inPoint, c.outPoint - off);
 }
 

@@ -213,6 +213,31 @@ pub struct Clip {
     /// Transición que entra a este clip desde el anterior.
     #[serde(default)]
     pub transition: Option<Transition>,
+    /// Rampa de velocidad: puntos (t = segundos del original desde la entrada).
+    /// Si hay puntos, mandan sobre `speed`.
+    #[serde(default)]
+    pub speed_keys: Vec<SpeedKey>,
+    /// Audio durante una rampa: mudo (lo normal) o con el tono preservado por tramo.
+    #[serde(default)]
+    pub ramp_audio: RampAudio,
+}
+
+/// Punto de una rampa de velocidad.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeedKey {
+    #[serde(default)]
+    pub id: u64,
+    pub t: f64,
+    pub v: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RampAudio {
+    #[default]
+    Mute,
+    Pitch,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

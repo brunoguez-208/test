@@ -33,6 +33,7 @@ export function isFastEligible(p: Project, st: ExportSettings = p.export): boole
     const plain =
       c.kind === "video" &&
       c.speed === 1 &&
+      !c.speedKeys?.length &&
       !c.reverse &&
       !c.smoothSlowmo &&
       c.loopMode === "none" &&

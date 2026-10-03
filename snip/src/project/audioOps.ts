@@ -15,7 +15,7 @@ const len = (m: MusicClip) => m.outPoint - m.inPoint;
 export function canSeparate(p: Project, id: string): boolean {
   const c = p.clips.find((x) => x.id === id);
   const m = c ? mediaById(p, c.mediaId) : undefined;
-  return !!c && !!m?.hasAudio && c.kind === "video" && !c.audio.removed && !c.audio.detached && Math.abs(c.speed - 1) < 1e-9 && !c.reverse && c.loopMode === "none";
+  return !!c && !!m?.hasAudio && c.kind === "video" && !c.audio.removed && !c.audio.detached && Math.abs(c.speed - 1) < 1e-9 && !c.speedKeys?.length && !c.reverse && c.loopMode === "none";
 }
 
 /**

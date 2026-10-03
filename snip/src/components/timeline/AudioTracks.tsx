@@ -4,7 +4,7 @@ import { itemMenu } from "../../store/clipboard";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
 import type { Clip, MediaRef, MusicClip, Project, VolumeKey } from "../../project/model";
-import { layout } from "../../project/timeline";
+import { layout, sourceTime } from "../../project/timeline";
 import { snap, snapPoints, trimMusic, updateMusic } from "../../project/ops";
 import { basename } from "../../lib/files";
 import { groupOf, shiftGroup } from "../../project/clipboard";
@@ -39,15 +39,7 @@ function drawWave(canvas: HTMLCanvasElement, peaks: Uint8Array | undefined, w: n
   }
 }
 
-function sourceAt(c: Clip, u: number): number {
-  if (c.kind === "freeze") return c.inPoint;
-  const seg = Math.max(1e-3, (c.outPoint - c.inPoint) / c.speed);
-  const pass = Math.floor(u / seg);
-  let fwd = c.loopMode === "boomerang" ? pass % 2 === 0 : true;
-  if (c.reverse) fwd = !fwd;
-  const off = (u - pass * seg) * c.speed;
-  return fwd ? c.inPoint + off : c.outPoint - off;
-}
+const sourceAt = sourceTime;
 
 const MAX_CANVAS = 4096;
 

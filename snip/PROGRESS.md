@@ -332,7 +332,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 ## Actualización 2.1 — tanda B — checklist
 - [x] B1. Biblioteca de medios
 - [x] B2. Visor de origen
-- [ ] B3. Rampas de velocidad
+- [x] B3. Rampas de velocidad
 - [ ] B4. Chroma key
 - [ ] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
 - [ ] B6. Máscaras
@@ -357,3 +357,17 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
   Esc cierra. Mientras está abierto, esas teclas no llegan al editor.
 - "Arrastrá el fragmento a una pista": lleva solo ese tramo (video a la pista principal, PiP
   sobre las capas, audio a la pista de audio).
+
+### Notas de B3 (rampas de velocidad)
+- Pestaña Clip → "Rampa de velocidad": presets "Cámara lenta en el medio", "Aceleración" y
+  "Frenada"; la curva (escala log 0,1×–10×) tiene puntos arrastrables, doble clic agrega o
+  borra un punto, "Quitar rampa" vuelve a velocidad constante. El clip muestra "Rampa".
+- Velocidad suave entre puntos (smoothstep), aproximada con hasta 64 tramos de velocidad
+  constante: la misma matemática en `core/src/ramp.rs` y `src/project/ramp.ts` (el largo del clip
+  coincide al cuadro). Audio: silenciado por defecto o "Mantener tono" (un `atempo` por tramo).
+- Etapa pesada: `setpts` por tramos + `fps=…:round=up` con base de tiempo fina, así cada cuadro
+  exportado es el mismo que el preview encuentra con `sourceTime` (paridad SSIM ≥ 0,986 en los
+  tres presets). Una rampa nunca va por el modo rápido (copia).
+- Dividir, recortar y "Pegar efectos" conservan la curva (se reparte, corre o escala).
+- Tests: unitarios Rust (curva, inversa, setpts, audio), integración (largo con y sin audio,
+  mudo vs. tono), Vitest (`ramp.test.ts`), Playwright (`ramp.spec.ts`) y paridad (`parity.spec.ts`).

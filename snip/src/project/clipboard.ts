@@ -3,7 +3,7 @@
 // principal, capas, audio y subtítulos). Todo pasa por `edit()`, así que se
 // deshace con Ctrl+Z como cualquier otra edición.
 
-import type { Clip, Cue, MediaRef, MusicClip, Overlay, Project } from "./model";
+import type { Clip, Cue, MediaRef, MusicClip, Overlay, Project, RampAudio, SpeedKey } from "./model";
 import { EditError, makeId, mediaById, splitAt } from "./ops";
 import { EPS, layout, totalDuration } from "./timeline";
 import { freeLane } from "./overlayOps";
@@ -225,6 +225,15 @@ export interface Effects {
   speed: number;
   smoothSlowmo: boolean;
   volume: number;
+  speedKeys?: SpeedKey[];
+  /** Largo (en el original) del clip de donde salió la rampa. */
+  rampLen?: number;
+  rampAudio?: RampAudio;
+}
+
+function scaleKeys(keys: SpeedKey[], from: number, to: number): SpeedKey[] {
+  const f = from > 1e-6 ? to / from : 1;
+  return keys.map((k) => ({ ...k, t: k.t * f }));
 }
 
 export function effectsOf(c: Clip): Effects {
@@ -234,6 +243,9 @@ export function effectsOf(c: Clip): Effects {
     speed: c.speed,
     smoothSlowmo: c.smoothSlowmo,
     volume: c.audio.volume,
+    speedKeys: c.speedKeys?.length ? c.speedKeys.map((k) => ({ ...k })) : undefined,
+    rampLen: c.outPoint - c.inPoint,
+    rampAudio: c.rampAudio,
   };
 }
 
@@ -250,6 +262,9 @@ export function pasteEffects(p: Project, fx: Effects, ids: string[]): Project {
       video: { ...c.video, ...fx.video, color: { ...fx.video.color } },
       speed: freeze ? c.speed : fx.speed,
       smoothSlowmo: freeze ? c.smoothSlowmo : fx.smoothSlowmo,
+      // La rampa se escala al largo del clip destino.
+      speedKeys: freeze || !fx.speedKeys?.length ? (freeze ? c.speedKeys : undefined) : scaleKeys(fx.speedKeys, fx.rampLen ?? c.outPoint - c.inPoint, c.outPoint - c.inPoint),
+      rampAudio: freeze ? c.rampAudio : fx.rampAudio,
       audio: { ...c.audio, volume: fx.volume },
     };
   });

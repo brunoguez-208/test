@@ -14,7 +14,8 @@ import {
   Sparkle16Regular,
 } from "@fluentui/react-icons";
 import type { Clip, MediaRef, Project } from "../../project/model";
-import { layout, passes, type Span } from "../../project/timeline";
+import { layout, passes, sourceTime, type Span } from "../../project/timeline";
+import { speedAt } from "../../project/ramp";
 import { moveClip, snap, snapPoints, trimClip } from "../../project/ops";
 import { needsHeavy } from "../../project/heavy";
 import { basename } from "../../lib/files";
@@ -81,7 +82,8 @@ const ClipView = memo(function ClipView({ clip, order, media, span, geo, selecte
 
   const badges: React.ReactNode[] = [];
   if (clip.kind === "freeze") badges.push(<Image16Regular key="fz" aria-label="Cuadro congelado" />);
-  if (clip.speed !== 1) badges.push(<span key="sp" className="tabular">{fmtSpeed(clip.speed)}</span>);
+  if (clip.speedKeys?.length) badges.push(<span key="sp" className="tabular" data-testid="ramp-badge">Rampa</span>);
+  else if (clip.speed !== 1) badges.push(<span key="sp" className="tabular">{fmtSpeed(clip.speed)}</span>);
   if (clip.smoothSlowmo && clip.speed < 1) badges.push(<Sparkle16Regular key="sm" aria-label="Cámara lenta suave" />);
   if (clip.reverse) badges.push(<ArrowUndo16Regular key="rv" aria-label="Invertido" />);
   if (clip.loopMode === "loop") badges.push(<span key="lp" className="flex items-center gap-0.5"><ArrowRepeatAll16Regular />×{clip.loopCount}</span>);
@@ -191,15 +193,7 @@ function fmtSpeed(s: number): string {
   return `${String(r).replace(".", ",")}×`;
 }
 
-function sourceTimeOf(c: Clip, u: number): number {
-  if (c.kind === "freeze") return c.inPoint;
-  const seg = Math.max(1e-3, (c.outPoint - c.inPoint) / c.speed);
-  const pass = Math.floor(u / seg);
-  let fwd = c.loopMode === "boomerang" ? pass % 2 === 0 : true;
-  if (c.reverse) fwd = !fwd;
-  const off = (u - pass * seg) * c.speed;
-  return fwd ? Math.min(c.outPoint, c.inPoint + off) : Math.max(c.inPoint, c.outPoint - off);
-}
+const sourceTimeOf = sourceTime;
 
 interface DragState {
   kind: "move" | "trim";
@@ -368,7 +362,8 @@ function makeTrimHandler(edge: "in" | "out", project: Project, geo: Geo, snapOn:
       }
       const delta = edgeT - (edge === "in" ? sp.start : sp.end);
       // Borde izquierdo: corre el inicio del contenido; derecho: el final.
-      const srcDelta = (delta * c.speed) / passes(c);
+      const edgeSpeed = c.speedKeys?.length ? speedAt(c.speedKeys, edge === "in" ? 0 : c.outPoint - c.inPoint) : c.speed;
+      const srcDelta = (delta * edgeSpeed) / passes(c);
       const field = edge === "in" ? (c.reverse ? c.outPoint - srcDelta : c.inPoint + srcDelta) : c.reverse ? c.inPoint - srcDelta : c.outPoint + srcDelta;
       edit(() => trimClip(origin, id, edge, field));
       // El preview muestra el cuadro del borde.

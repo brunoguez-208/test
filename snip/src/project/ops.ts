@@ -19,7 +19,8 @@ import {
   type Project,
   type Transition,
 } from "./model";
-import { EPS, clipDuration, layout, segmentDuration, totalDuration } from "./timeline";
+import { EPS, clipDuration, layout, sourceTime, totalDuration } from "./timeline";
+import { cutKeys } from "./ramp";
 import { clipGeometry } from "./geometry";
 import { splitZoomKeys } from "./zoom";
 
@@ -167,14 +168,19 @@ export function splitAt(p: Project, t: number): Project {
     if (c.loopMode !== "none") throw new EditError("Para dividir un clip con repeticiones, primero quitá el loop.");
     const m = mediaById(p, c.mediaId);
     const sfps = m?.fps || fps;
-    const s = snapSourceToFrame(c.reverse ? c.outPoint - u * c.speed : c.inPoint + u * c.speed, sfps);
+    const s = snapSourceToFrame(sourceTime(c, u), sfps);
     if (s <= c.inPoint + EPS || s >= c.outPoint - EPS) throw new EditError("Muy cerca del borde del clip para dividir.");
+    // La rampa se reparte: cada mitad se queda con su parte de la curva.
+    const cut = c.reverse ? c.outPoint - s : s - c.inPoint;
+    const len = c.outPoint - c.inPoint;
+    const ka = cutKeys(c.speedKeys, 0, cut);
+    const kb = cutKeys(c.speedKeys, cut, len);
     if (!c.reverse) {
-      a = { ...c, outPoint: s };
-      b = { ...c, id: makeId("c"), inPoint: s, transition: null };
+      a = { ...c, outPoint: s, speedKeys: ka };
+      b = { ...c, id: makeId("c"), inPoint: s, transition: null, speedKeys: kb };
     } else {
-      a = { ...c, inPoint: s };
-      b = { ...c, id: makeId("c"), outPoint: s, transition: null };
+      a = { ...c, inPoint: s, speedKeys: ka };
+      b = { ...c, id: makeId("c"), outPoint: s, transition: null, speedKeys: kb };
     }
   }
   const [za, zb] = splitZoomKeys(c.video.zoom, u, u);
@@ -252,6 +258,11 @@ export function trimClip(p: Project, id: string, edge: "in" | "out", sourceTime:
   let next: Clip;
   if (field === "inPoint") next = { ...c, inPoint: Math.max(0, Math.min(t, c.outPoint - minLen)) };
   else next = { ...c, outPoint: Math.min(maxT, Math.max(t, c.inPoint + minLen)) };
+  if (c.speedKeys?.length) {
+    // Los puntos de la rampa se cuentan desde el inicio de la pasada.
+    const d = c.reverse ? c.outPoint - next.outPoint : next.inPoint - c.inPoint;
+    next = { ...next, speedKeys: cutKeys(c.speedKeys, d, d + next.outPoint - next.inPoint) };
+  }
   const clips = [...p.clips];
   clips[i] = next;
   return { ...p, clips };
@@ -328,13 +339,7 @@ export function freezeAt(p: Project, t: number, duration: number): Project {
 }
 
 function sourceAt(c: Clip, u: number): number {
-  const seg = Math.max(EPS, segmentDuration(c));
-  const uu = Math.min(Math.max(0, u), Math.max(0, clipDuration(c) - 1e-9));
-  const pass = Math.floor(uu / seg);
-  let fwd = c.loopMode === "boomerang" ? pass % 2 === 0 : true;
-  if (c.reverse) fwd = !fwd;
-  const off = (uu - pass * seg) * c.speed;
-  return fwd ? Math.min(c.outPoint, c.inPoint + off) : Math.max(c.inPoint, c.outPoint - off);
+  return sourceTime(c, u);
 }
 
 // --------------------------------- Marcadores ---------------------------------
