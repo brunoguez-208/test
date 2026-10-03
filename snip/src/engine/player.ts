@@ -6,10 +6,11 @@ import type { Clip, Look, MediaRef, MusicClip, Project } from "../project/model"
 import { canvasFps, LOUDNORM_I } from "../project/model";
 import { activeAt, layout, sourceTime, totalDuration, type Span } from "../project/timeline";
 import { dbToGain, resumeAudio, setGain, setMasterVolume } from "./audio";
-import { Renderer, type ClipDraw, type FrameDraw } from "./renderer";
+import { Renderer, type BlurDraw, type ClipDraw, type FrameDraw, type PipDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
-import { DecorLayer, ImageCache } from "./raster";
+import { DecorLayer, ImageCache, drawPipShadow, isActive, zonePixels } from "./raster";
+import { blurRadius, pipRect, pixelSize, rectAt } from "../project/overlayOps";
 
 export interface ClipSource {
   url: string;
@@ -337,6 +338,24 @@ export class Player {
       add(frame.a, frame.progress, playing);
       add(frame.b, 1 - frame.progress, playing);
     } else add(frame.a, 1, playing);
+    // Picture-in-picture: su propio <video> (con su volumen).
+    for (const o of p.overlays) {
+      if (o.type !== "video") continue;
+      const near = this.time >= o.start - PRELOAD_SECS && this.time < o.start + o.duration;
+      if (!near) continue;
+      const m = p.media.find((x) => x.id === o.mediaId);
+      const url = m ? this.resolver.mediaUrl(m) : null;
+      if (!url) continue;
+      const active = this.time >= o.start;
+      out.push({
+        key: `pip:${o.id}`,
+        url,
+        time: o.inPoint + Math.max(0, this.time - o.start),
+        rate: this.rate,
+        gain: active ? o.volume : 0,
+        play: playing && active && this.rate > 0,
+      });
+    }
     // Precarga del siguiente clip.
     const next = (frame.b ?? frame.a) + 1;
     if (next < p.clips.length && this.spans[next].start - this.time < PRELOAD_SECS) {
@@ -574,6 +593,53 @@ export class Player {
     }
   }
 
+  private shadowCanvases = new Map<string, { canvas: HTMLCanvasElement; key: string }>();
+
+  /** Zonas y PiP del cuadro actual, en píxeles del render. */
+  private zoneDraws(w: number, h: number): { blurs: BlurDraw[]; pips: PipDraw[] } {
+    const p = this.project;
+    const blurs: BlurDraw[] = [];
+    const pips: PipDraw[] = [];
+    if (!p || !p.overlays.length) return { blurs, pips };
+    const W = p.canvas.width;
+    const H = p.canvas.height;
+    const sx = w / W;
+    const sy = h / H;
+    const ordered = [...p.overlays].sort((a, b) => a.lane - b.lane || a.start - b.start);
+    for (const o of ordered) {
+      if (o.type !== "blur" || !isActive(o, this.time)) continue;
+      const [x0, y0, x1, y1] = zonePixels(rectAt(o, this.time - o.start), W, H);
+      const size = o.mode === "blur" ? blurRadius(o.strength, H) : pixelSize(o.strength, H);
+      blurs.push({ zone: [x0 * sx, y0 * sy, x1 * sx, y1 * sy], mode: o.mode, size: size * sy });
+    }
+    for (const o of ordered) {
+      if (o.type !== "video" || !isActive(o, this.time)) continue;
+      const m = p.media.find((x) => x.id === o.mediaId);
+      const s = this.slots.find((x) => x.owner === `pip:${o.id}`);
+      if (!m || !s || s.el.readyState < 2 || s.el.videoWidth === 0) continue;
+      const r = pipRect(o, m, W, H);
+      const rect = { x: r.x * sx, y: r.y * sy, w: r.w * sx, h: r.h * sy };
+      const radius = o.radius * Math.min(rect.w, rect.h);
+      let shadow: PipDraw["shadow"] = null;
+      if (o.shadow) {
+        const key = JSON.stringify([rect, radius, w, h]);
+        let sc = this.shadowCanvases.get(o.id);
+        if (!sc || sc.key !== key) {
+          const canvas = sc?.canvas ?? document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (ctx) drawPipShadow(ctx, rect, radius, w, h);
+          sc = { canvas, key };
+          this.shadowCanvases.set(o.id, sc);
+        }
+        shadow = { source: sc.canvas, key: `${o.id}#${sc.key}` };
+      }
+      pips.push({ source: s.el, rect, radius, shadow });
+    }
+    return { blurs, pips };
+  }
+
   private decorLayers(w: number, h: number): { source: TexImageSource; key: string }[] {
     const p = this.project;
     if (!p) return [];
@@ -595,6 +661,7 @@ export class Player {
       b,
       transition: f.b !== null && kind ? { kind, progress: f.progress } : null,
       fade: this.globalFade(),
+      ...this.zoneDraws(this.renderW, this.renderH),
       layers: this.decorLayers(this.renderW, this.renderH),
     };
   }
@@ -652,6 +719,7 @@ export class Player {
       const f = this.frameDraw();
       if (!f) throw new Error("Sin cuadro");
       if (f.transition && !f.b) f.transition = null;
+      Object.assign(f, this.zoneDraws(w, h));
       // Otra resolución: una capa propia (no pisa la caché del preview).
       const own = new DecorLayer(this.images);
       const c = own.get(p, this.time, w, h);

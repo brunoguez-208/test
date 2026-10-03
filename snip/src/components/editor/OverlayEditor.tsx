@@ -2,8 +2,10 @@
 // e imán al centro) y la manija de la esquina cambia el tamaño.
 
 import { useState } from "react";
-import type { ImageLayer, Overlay, Project, TextLayer } from "../../project/model";
-import { updateOverlay } from "../../project/overlayOps";
+import type { BlurLayer, ImageLayer, Overlay, Project, TextLayer } from "../../project/model";
+import { canvasFps } from "../../project/model";
+import { pipRect, rectAt, setBlurRectAt, updateOverlay } from "../../project/overlayOps";
+import { dragCrop } from "./ImageEditors";
 import { imageRect, isActive, measureText } from "../../engine/raster";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor } from "../../store/editor";
 import { requestTextFocus } from "../../store/controller";
@@ -33,12 +35,21 @@ export function overlayBox(p: Project, o: Overlay): Box | null {
     const r = imageRect(o as ImageLayer, m, W, H);
     return { x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H };
   }
+  if (o.type === "video") {
+    const m = p.media.find((x) => x.id === o.mediaId);
+    if (!m) return null;
+    const r = pipRect(o, m, W, H);
+    return { x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H };
+  }
+  if (o.type === "blur") return rectAt(o, useEditor.getState().time - o.start);
   return null;
 }
 
 /** Capa visible bajo el punto (la de más arriba), o null. */
 export function hitOverlay(p: Project, t: number, nx: number, ny: number): Overlay | null {
-  const vis = p.overlays.filter((o) => (o.type === "text" || o.type === "image") && isActive(o, t)).sort((a, b) => b.lane - a.lane || b.start - a.start);
+  // Lo de más arriba primero: textos/logos, después PiP, después zonas.
+  const rank = (o: Overlay) => (o.type === "text" || o.type === "image" ? 2 : o.type === "video" ? 1 : 0);
+  const vis = p.overlays.filter((o) => isActive(o, t)).sort((a, b) => rank(b) - rank(a) || b.lane - a.lane || b.start - a.start);
   for (const o of vis) {
     const b = overlayBox(p, o);
     if (b && nx >= b.x && nx <= b.x + b.w && ny >= b.y && ny <= b.y + b.h) return o;
@@ -89,6 +100,7 @@ export function dragOverlay(e: React.PointerEvent, p: Project, o: Overlay, box: 
         updateOverlay(p, o.id, (z) => {
           if (z.type === "text") return { ...z, style: { ...z.style, size: Math.min(0.4, Math.max(0.015, (o as TextLayer).style.size * k)) } };
           if (z.type === "image") return { ...z, width: Math.min(1.5, Math.max(0.02, (o as ImageLayer).width * k)) };
+          if (z.type === "video" && o.type === "video") return { ...z, width: Math.min(1, Math.max(0.08, o.width * k)) };
           return z;
         }),
       );
@@ -109,7 +121,8 @@ export function OverlayEditor({ project }: { project: Project }) {
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   const time = useEditor((s) => s.time);
   const [guides, setGuides] = useState({ x: false, y: false });
-  const o = project.overlays.find((x) => (x.type === "text" || x.type === "image") && selection.includes(x.id) && isActive(x, time));
+  const o = project.overlays.find((x) => selection.includes(x.id) && isActive(x, time));
+  if (o?.type === "blur") return <ZoneEditor project={project} o={o as Overlay & BlurLayer & { type: "blur" }} time={time} />;
   const box = o ? overlayBox(project, o) : null;
   if (!o || !box) return null;
   const pct = (v: number) => `${v * 100}%`;
@@ -134,6 +147,61 @@ export function OverlayEditor({ project }: { project: Project }) {
           onPointerDown={(e) => dragOverlay(e, project, o, e.currentTarget.parentElement!.parentElement!, "scale", setGuides)}
           data-testid="overlay-scale"
         />
+      </div>
+    </div>
+  );
+}
+
+const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+
+/** Zona desenfocada: mover y redimensionar con manijas (con keyframes, edita el del cuadro actual). */
+function ZoneEditor({ project, o, time }: { project: Project; o: Overlay & BlurLayer & { type: "blur" }; time: number }) {
+  const [active, setActive] = useState<string | null>(null);
+  const r = rectAt(o, time - o.start);
+  const down = (h: (typeof HANDLES)[number] | "move") => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = (e.currentTarget as HTMLElement).closest("[data-zone-box]") as HTMLElement;
+    const rr = box.getBoundingClientRect();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const from = { ...r };
+    const u = time - o.start;
+    let started = false;
+    setActive(h);
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / rr.width;
+      const dy = (ev.clientY - y0) / rr.height;
+      if (!started) {
+        if (Math.abs(ev.clientX - x0) < 2 && Math.abs(ev.clientY - y0) < 2) return;
+        started = true;
+        gestureStart();
+      }
+      const n = dragCrop(from, h, dx, dy, null);
+      edit(() => setBlurRectAt(project, o.id, u, { x: n.x, y: n.y, w: n.w, h: n.h }, 1 / canvasFps(project.canvas)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setActive(null);
+      if (started) gestureEnd();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const pct = (v: number) => `${v * 100}%`;
+  return (
+    <div className="pointer-events-none absolute inset-0" data-zone-box data-testid="zone-editor">
+      <div
+        className={`zone-rect pointer-events-auto absolute ${active === "move" ? "is-active" : ""}`}
+        style={{ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) }}
+        onPointerDown={down("move")}
+        data-testid="zone-rect"
+      >
+        {HANDLES.map((h) => (
+          <span key={h} className={`crop-handle crop-handle-${h} ${active === h ? "is-active" : ""}`} onPointerDown={down(h)} data-testid={`zone-handle-${h}`} />
+        ))}
       </div>
     </div>
   );

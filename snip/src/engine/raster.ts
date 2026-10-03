@@ -8,6 +8,7 @@
 import type { Cue, ImageLayer, MediaRef, Overlay, Project, SubtitleStyle, TextAnim, TextLayer, TextStyle } from "../project/model";
 import { canvasFps } from "../project/model";
 import { totalDuration } from "../project/timeline";
+import { pipRect, rectAt } from "../project/overlayOps";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type TextOverlay = Overlay & TextLayer;
@@ -366,6 +367,39 @@ export class ImageCache implements ImageSource {
   }
 }
 
+// ------------------------------- PiP y zonas -------------------------------
+
+/** Sombra del PiP sobre un canvas transparente del tamaño del lienzo (solo la sombra). */
+export function drawPipShadow(ctx: Ctx, rect: { x: number; y: number; w: number; h: number }, radius: number, W: number, H: number) {
+  ctx.clearRect(0, 0, W, H);
+  const m = Math.min(rect.w, rect.h);
+  const shift = W + rect.w + 100;
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = m * 0.12;
+  ctx.shadowOffsetX = shift;
+  ctx.shadowOffsetY = m * 0.04;
+  ctx.fillStyle = "#000";
+  // La figura queda fuera del lienzo: solo se ve su sombra.
+  roundRect(ctx, rect.x - shift, rect.y, rect.w, rect.h, radius);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Máscara del PiP (blanco = se ve) del tamaño del PiP, con las esquinas redondeadas. */
+export function drawPipMask(ctx: Ctx, w: number, h: number, radius: number) {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#fff";
+  roundRect(ctx, 0, 0, w, h, radius);
+  ctx.fill();
+}
+
+/** Zona en píxeles enteros del lienzo (el mismo redondeo usa el shader del preview). */
+export function zonePixels(r: { x: number; y: number; w: number; h: number }, W: number, H: number): [number, number, number, number] {
+  return [Math.round(r.x * W), Math.round(r.y * H), Math.round((r.x + r.w) * W), Math.round((r.y + r.h) * H)];
+}
+
 // ------------------------------- Cuadro completo -------------------------------
 
 /** Dibuja la capa de decoración del instante t sobre un canvas transparente de W×H. */
@@ -441,18 +475,18 @@ export interface DecorSequence {
 }
 
 /**
- * Tramos del timeline con el mismo estado de capa. Cada cuadro k se muestrea en
- * k/fps (como el preview); el tramo empieza medio cuadro antes para que el
- * overlay de FFmpeg siempre tome el PNG correcto aunque haya redondeos.
+ * Tramos del timeline con el mismo estado (según `keyAt`). Cada cuadro k se
+ * muestrea en k/fps (como el preview); el tramo empieza medio cuadro antes para
+ * que el overlay de FFmpeg siempre tome el PNG correcto aunque haya redondeos.
  */
-export function decorRuns(p: Project): { key: string; t: number; start: number; end: number }[] {
+export function runsOf(p: Project, keyAt: (t: number) => string): { key: string; t: number; start: number; end: number }[] {
   const fps = canvasFps(p.canvas);
   const total = totalDuration(p);
   const n = Math.max(1, Math.ceil(total * fps - 1e-6));
   const runs: { key: string; t: number; start: number; end: number }[] = [];
   for (let k = 0; k < n; k++) {
     const t = k / fps;
-    const key = decorKey(p, t, fps);
+    const key = keyAt(t);
     const last = runs[runs.length - 1];
     if (last && last.key === key) continue;
     if (last) last.end = Math.max(0, (k - 0.5) / fps);
@@ -461,14 +495,24 @@ export function decorRuns(p: Project): { key: string; t: number; start: number; 
   return runs;
 }
 
+export function decorRuns(p: Project) {
+  const fps = canvasFps(p.canvas);
+  return runsOf(p, (t) => decorKey(p, t, fps));
+}
+
 function canvasToPng(c: HTMLCanvasElement | OffscreenCanvas): Promise<Blob> {
   if ("convertToBlob" in c) return c.convertToBlob({ type: "image/png" });
   return new Promise((res, rej) => (c as HTMLCanvasElement).toBlob((b) => (b ? res(b) : rej(new Error("No se pudo generar la imagen"))), "image/png"));
 }
 
-/** Arma la secuencia de PNG de toda la capa (un PNG por estado distinto). */
-export async function renderDecorSequence(p: Project, images: ImageSource, onProgress?: (f: number) => void): Promise<DecorSequence | null> {
-  if (!hasDecor(p)) return null;
+/** Secuencia de PNG (uno por estado distinto) + lista ffconcat. */
+async function renderSequence(
+  p: Project,
+  prefix: string,
+  keyAt: (t: number) => string,
+  draw: (ctx: CanvasRenderingContext2D, t: number, W: number, H: number) => void,
+  onProgress?: (f: number) => void,
+): Promise<DecorSequence> {
   const W = p.canvas.width;
   const H = p.canvas.height;
   const canvas = document.createElement("canvas");
@@ -476,7 +520,7 @@ export async function renderDecorSequence(p: Project, images: ImageSource, onPro
   canvas.height = H;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Sin canvas 2D");
-  const runs = decorRuns(p);
+  const runs = runsOf(p, keyAt);
   const byKey = new Map<string, string>();
   const frames: DecorFrame[] = [];
   const lines = ["ffconcat version 1.0"];
@@ -485,8 +529,8 @@ export async function renderDecorSequence(p: Project, images: ImageSource, onPro
     const r = runs[i];
     let name = byKey.get(r.key);
     if (!name) {
-      name = `f${String(frames.length + 1).padStart(5, "0")}.png`;
-      drawDecor(ctx, p, r.t, W, H, images);
+      name = `${prefix}${String(frames.length + 1).padStart(5, "0")}.png`;
+      draw(ctx, r.t, W, H);
       frames.push({ name, png: await canvasToPng(canvas) });
       byKey.set(r.key, name);
     }
@@ -499,4 +543,71 @@ export async function renderDecorSequence(p: Project, images: ImageSource, onPro
   // ffconcat necesita repetir el último archivo para respetar su duración.
   lines.push(`file '${lastName}'`);
   return { frames, list: lines.join("\n") + "\n" };
+}
+
+/** Arma la secuencia de PNG de toda la capa de decoración. */
+export async function renderDecorSequence(p: Project, images: ImageSource, onProgress?: (f: number) => void): Promise<DecorSequence | null> {
+  if (!hasDecor(p)) return null;
+  const fps = canvasFps(p.canvas);
+  return renderSequence(p, "f", (t) => decorKey(p, t, fps), (ctx, t, W, H) => drawDecor(ctx, p, t, W, H, images), onProgress);
+}
+
+export interface PipAssets {
+  mask: Blob;
+  shadow: Blob | null;
+  rect: { x: number; y: number; w: number; h: number };
+}
+
+export interface ZoneAssets {
+  /** Máscara (secuencia) de cada zona desenfocada. */
+  masks: Record<string, DecorSequence>;
+  pips: Record<string, PipAssets>;
+}
+
+/** Máscaras de las zonas y máscara + sombra de cada PiP, como las dibuja el preview. */
+export async function renderZoneAssets(p: Project): Promise<ZoneAssets | null> {
+  const blurs = p.overlays.filter((o) => o.type === "blur");
+  const pipsL = p.overlays.filter((o) => o.type === "video");
+  if (!blurs.length && !pipsL.length) return null;
+  const W = p.canvas.width;
+  const H = p.canvas.height;
+  const fps = canvasFps(p.canvas);
+  const out: ZoneAssets = { masks: {}, pips: {} };
+  for (const o of blurs) {
+    if (o.type !== "blur") continue;
+    out.masks[o.id] = await renderSequence(
+      p,
+      `m${Object.keys(out.masks).length}_`,
+      (t) => (isActive(o, t) ? (o.keys.length ? `k${Math.round(t * fps)}` : "on") : ""),
+      (ctx, t) => {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+        if (!isActive(o, t)) return;
+        const [x0, y0, x1, y1] = zonePixels(rectAt(o, t - o.start), W, H);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      },
+    );
+  }
+  for (const o of pipsL) {
+    if (o.type !== "video") continue;
+    const m = p.media.find((x) => x.id === o.mediaId);
+    if (!m) continue;
+    const rect = pipRect(o, m, W, H);
+    const radius = o.radius * Math.min(rect.w, rect.h);
+    const mc = document.createElement("canvas");
+    mc.width = rect.w;
+    mc.height = rect.h;
+    drawPipMask(mc.getContext("2d")!, rect.w, rect.h, radius);
+    let shadow: Blob | null = null;
+    if (o.shadow) {
+      const sc = document.createElement("canvas");
+      sc.width = W;
+      sc.height = H;
+      drawPipShadow(sc.getContext("2d")!, rect, radius, W, H);
+      shadow = await canvasToPng(sc);
+    }
+    out.pips[o.id] = { mask: await canvasToPng(mc), shadow, rect };
+  }
+  return out;
 }

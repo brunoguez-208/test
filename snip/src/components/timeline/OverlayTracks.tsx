@@ -2,7 +2,7 @@
 // mueve en el tiempo y entre filas, y se recorta por los bordes.
 
 import { motion, useReducedMotion } from "motion/react";
-import { Image16Regular, TextT16Regular } from "@fluentui/react-icons";
+import { Blur16Regular, Image16Regular, PictureInPicture16Regular, TextT16Regular } from "@fluentui/react-icons";
 import type { Cue, Overlay, Project } from "../../project/model";
 import { moveOverlay, trimOverlay, updateCue } from "../../project/overlayOps";
 import { snap, snapPoints } from "../../project/ops";
@@ -79,7 +79,7 @@ function overlayLabel(p: Project, o: Overlay): string {
     const m = p.media.find((x) => x.id === o.mediaId);
     return m ? basename(m.path) : "Imagen";
   }
-  return "Desenfoque";
+  return o.mode === "pixelate" ? "Pixelado" : "Desenfoque";
 }
 
 function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; o: Overlay; geo: Geo; selected: boolean; snapOn: boolean }) {
@@ -106,7 +106,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       () => select(o0.id, o0.type === "text" ? "text" : "video"),
     );
   };
-  const Icon = o.type === "text" ? TextT16Regular : Image16Regular;
+  const Icon = o.type === "text" ? TextT16Regular : o.type === "video" ? PictureInPicture16Regular : o.type === "blur" ? Blur16Regular : Image16Regular;
   return (
     <motion.div
       layout={reduce ? false : "position"}
@@ -115,7 +115,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       style={{ left: x, width: w, top: o.lane * OVERLAY_H + 2, height: OVERLAY_H - 4 }}
       onPointerDown={down("move")}
       role="button"
-      aria-label={`${o.type === "text" ? "Texto" : "Imagen"}: ${overlayLabel(project, o)}`}
+      aria-label={`${o.type === "text" ? "Texto" : o.type === "video" ? "Picture-in-picture" : o.type === "blur" ? "Zona" : "Imagen"}: ${overlayLabel(project, o)}`}
       data-testid="overlay-item"
       data-overlay-id={o.id}
     >

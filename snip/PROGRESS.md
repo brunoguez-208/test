@@ -114,8 +114,8 @@ se corta, se retoma desde acá.
 - [x] 30. Subtítulos `.srt`
 - [x] 31. Subtítulos automáticos (whisper.cpp)
 - [x] 32. Marca de agua / logo
-- [ ] 33. Desenfocar / pixelar zona
-- [ ] 34. Picture-in-picture
+- [x] 33. Desenfocar / pixelar zona
+- [x] 34. Picture-in-picture
 - [ ] Tests completos + instalador final
 
 ### Notas de la tanda 2
@@ -129,6 +129,11 @@ se corta, se retoma desde acá.
   El preview lo usa en vivo; la exportación genera un PNG por estado distinto + lista ffconcat
   (cada tramo arranca medio cuadro antes) que Rust superpone. Paridad SSIM ≥ 0,987.
   Los textos van siempre por encima de los clips y del PiP; los subtítulos, arriba de todo.
+- Orden de composición (preview = exportación): clips → zonas desenfocadas/pixeladas → PiP →
+  textos, logos y subtítulos. Zonas: máscara rasterizada (por cuadro si tienen keyframes) +
+  `boxblur`/`pixelize` + `alphamerge`; en el preview, blur separable y pixelado por bloques
+  alineados al origen. PiP: rectángulo en píxeles pares calculado en TS, máscara de esquinas y
+  sombra dibujadas con canvas, video escalado con lanczos; su audio se mezcla con su volumen.
 - El lienzo automático sigue al tamaño visible del primer clip (rotado/recortado).
 - whisper.cpp: los binarios oficiales para Windows solo traen CPU o CUDA (670 MB). Se compila
   con MinGW + Vulkan (`scripts/build-whisper.sh`): GPU de NVIDIA, AMD o Intel, y la CPU como

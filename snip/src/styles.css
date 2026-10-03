@@ -903,3 +903,7 @@ kbd.kbd {
 .overlay-guide { pointer-events: none; background: var(--accent-fill); box-shadow: 0 0 6px color-mix(in srgb, var(--accent-fill) 60%, transparent); }
 .overlay-guide-v { width: 1px; }
 .overlay-guide-h { height: 1px; }
+
+/* Zona desenfocada seleccionada */
+.zone-rect { cursor: move; border: 1px dashed rgb(255 255 255 / 0.9); outline: 1px dashed rgb(0 0 0 / 0.45); outline-offset: -2px; touch-action: none; }
+.zone-rect.is-active, .zone-rect:hover { border-color: var(--accent-fill); }

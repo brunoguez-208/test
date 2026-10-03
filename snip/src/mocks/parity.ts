@@ -5,13 +5,27 @@
 import type { Project } from "../project/model";
 import { canvasFps } from "../project/model";
 import { Player } from "../engine/player";
-import { ImageCache, renderDecorSequence } from "../engine/raster";
+import { ImageCache, renderDecorSequence, renderZoneAssets } from "../engine/raster";
 
 export interface ParityApi {
   /** `urls`: ruta del medio → URL servida. Devuelve un PNG (data URL) por cuadro pedido. */
   render(project: Project, urls: Record<string, string>, frames: number[]): Promise<string[]>;
-  /** Secuencia de la capa de decoración, como la arma la app al exportar (PNG en base64). */
-  raster(project: Project, urls: Record<string, string>): Promise<{ files: { name: string; data: string }[]; list: string } | null>;
+  /** Capas rasterizadas, como las arma la app al exportar (PNG en base64). */
+  raster(project: Project, urls: Record<string, string>): Promise<ParityRaster>;
+}
+
+export interface ParityRaster {
+  files: { name: string; data: string }[];
+  decor: string | null;
+  masks: Record<string, string>;
+  pips: Record<string, { mask: string; shadow: string | null; width: number; height: number; x: number; y: number }>;
+}
+
+async function b64(b: Blob): Promise<string> {
+  const bytes = new Uint8Array(await b.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 async function blobUrls(urls: Record<string, string>): Promise<Record<string, string>> {
@@ -47,17 +61,23 @@ export function installParity() {
       const blobs = await blobUrls(urls);
       const images = new ImageCache((m) => blobs[m.path] ?? null);
       await images.ready(project);
+      const out: ParityRaster = { files: [], decor: null, masks: {}, pips: {} };
       const seq = await renderDecorSequence(project, images);
-      if (!seq) return null;
-      const files = await Promise.all(
-        seq.frames.map(async (f) => {
-          const bytes = new Uint8Array(await f.png.arrayBuffer());
-          let bin = "";
-          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-          return { name: f.name, data: btoa(bin) };
-        }),
-      );
-      return { files, list: seq.list };
+      if (seq) {
+        for (const f of seq.frames) out.files.push({ name: f.name, data: await b64(f.png) });
+        out.decor = seq.list;
+      }
+      const zones = await renderZoneAssets(project);
+      for (const [id, ms] of Object.entries(zones?.masks ?? {})) {
+        for (const f of ms.frames) out.files.push({ name: f.name, data: await b64(f.png) });
+        out.masks[id] = ms.list;
+      }
+      for (const [i, [id, a]] of Object.entries(zones?.pips ?? {}).entries()) {
+        out.files.push({ name: `pipmask${i}.png`, data: await b64(a.mask) });
+        if (a.shadow) out.files.push({ name: `pipshadow${i}.png`, data: await b64(a.shadow) });
+        out.pips[id] = { mask: `pipmask${i}.png`, shadow: a.shadow ? `pipshadow${i}.png` : null, width: a.rect.w, height: a.rect.h, x: a.rect.x, y: a.rect.y };
+      }
+      return out;
     },
   };
   (window as unknown as { __snipParity: ParityApi }).__snipParity = api;

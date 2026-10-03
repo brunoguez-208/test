@@ -155,6 +155,93 @@ void main() {
 }
 `;
 
+/** Desenfoque de zona, pasada horizontal (solo cerca de la zona; el resto sale vacío). */
+export const BLUR_H_FRAG = `${COMMON}
+uniform sampler2D uSrc;
+uniform vec4 uZone;          // x0, y0, x1, y1 en píxeles (x1/y1 excluidos)
+uniform int uR;
+void main() {
+  vec2 p = pixel();
+  if (p.x < uZone.x || p.x >= uZone.z || p.y < uZone.y - float(uR) || p.y >= uZone.w + float(uR)) { outColor = vec4(0.0); return; }
+  vec4 acc = vec4(0.0);
+  for (int k = -128; k <= 128; k++) {
+    if (k < -uR || k > uR) continue;
+    acc += fboAt(uSrc, vec2(clamp(p.x + float(k), 0.0, uSize.x - 1.0), p.y));
+  }
+  outColor = acc / float(2 * uR + 1);
+}
+`;
+
+/** Desenfoque de zona, pasada vertical: dentro de la zona el desenfoque, afuera la imagen original. */
+export const BLUR_V_FRAG = `${COMMON}
+uniform sampler2D uBase;
+uniform sampler2D uH;
+uniform vec4 uZone;
+uniform int uR;
+void main() {
+  vec2 p = pixel();
+  if (p.x < uZone.x || p.x >= uZone.z || p.y < uZone.y || p.y >= uZone.w) { outColor = fboAt(uBase, p); return; }
+  vec4 acc = vec4(0.0);
+  for (int k = -128; k <= 128; k++) {
+    if (k < -uR || k > uR) continue;
+    acc += fboAt(uH, vec2(p.x, clamp(p.y + float(k), 0.0, uSize.y - 1.0)));
+  }
+  outColor = vec4((acc / float(2 * uR + 1)).rgb, 1.0);
+}
+`;
+
+/** Pixelado de zona: bloques de N×N alineados al origen del cuadro (como pixelize de FFmpeg). */
+export const PIXELATE_FRAG = `${COMMON}
+uniform sampler2D uBase;
+uniform vec4 uZone;
+uniform float uN;
+void main() {
+  vec2 p = pixel();
+  if (p.x < uZone.x || p.x >= uZone.z || p.y < uZone.y || p.y >= uZone.w) { outColor = fboAt(uBase, p); return; }
+  vec2 o = floor(p / uN) * uN;
+  vec2 size = min(vec2(uN), uSize - o);
+  // Promedio del bloque (hasta 8×8 muestras repartidas).
+  vec2 n = min(size, vec2(8.0));
+  vec4 acc = vec4(0.0);
+  for (int j = 0; j < 8; j++) {
+    if (float(j) >= n.y) break;
+    for (int i = 0; i < 8; i++) {
+      if (float(i) >= n.x) break;
+      acc += fboAt(uBase, o + floor((vec2(float(i), float(j)) + 0.5) * size / n));
+    }
+  }
+  outColor = vec4((acc / (n.x * n.y)).rgb, 1.0);
+}
+`;
+
+/** Picture-in-picture: el video dentro de un rectángulo con esquinas redondeadas (premultiplicado). */
+export const PIP_FRAG = `${COMMON}
+uniform sampler2D uTex;
+uniform vec4 uRect;          // x, y, w, h en píxeles
+uniform float uRadius;
+void main() {
+  vec2 p = pixel() + 0.5;
+  vec2 local = p - uRect.xy;
+  if (local.x < 0.0 || local.y < 0.0 || local.x > uRect.z || local.y > uRect.w) discard;
+  vec2 half_ = uRect.zw * 0.5;
+  vec2 q = abs(local - half_) - (half_ - vec2(uRadius));
+  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uRadius;
+  float a = clamp(0.5 - d, 0.0, 1.0);
+  if (a <= 0.0) discard;
+  vec3 c = texture(uTex, local / uRect.zw).rgb;
+  outColor = vec4(c * a, a);
+}
+`;
+
+/** Capa RGBA premultiplicada sobre el destino (con blending). */
+export const LAYER_FRAG = `${COMMON}
+uniform sampler2D uLayer;
+void main() {
+  vec2 p = pixel();
+  outColor = texture(uLayer, vec2((p.x + 0.5) / uSize.x, (p.y + 0.5) / uSize.y));
+}
+`;
+
 export const TRANSITION_INDEX: Record<string, number> = {
   fade: 0,
   fadeBlack: 1,

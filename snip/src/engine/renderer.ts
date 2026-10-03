@@ -1,7 +1,7 @@
 // Renderer WebGL2 del preview: dibuja cada clip activo en un FBO del tamaño del
 // lienzo, resuelve la transición y copia al canvas con el fundido global.
 
-import { BLIT_FRAG, CLIP_FRAG, OVERLAY_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
+import { BLIT_FRAG, BLUR_H_FRAG, BLUR_V_FRAG, CLIP_FRAG, LAYER_FRAG, OVERLAY_FRAG, PIP_FRAG, PIXELATE_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
 import type { ColorPipeline } from "./color";
 
 export interface ClipDraw {
@@ -23,11 +23,30 @@ export interface ClipDraw {
   sharpen: number;
 }
 
+/** Zona desenfocada o pixelada (píxeles del render, x1/y1 excluidos). */
+export interface BlurDraw {
+  zone: [number, number, number, number];
+  mode: "blur" | "pixelate";
+  /** Radio del desenfoque o lado del bloque, en píxeles del render. */
+  size: number;
+}
+
+/** Picture-in-picture: video en un rectángulo con esquinas redondeadas y sombra opcional. */
+export interface PipDraw {
+  source: TexImageSource;
+  rect: { x: number; y: number; w: number; h: number };
+  radius: number;
+  shadow: { source: TexImageSource; key: string } | null;
+}
+
 export interface FrameDraw {
   a: ClipDraw | null;
   b: ClipDraw | null;
   transition: { kind: string; progress: number } | null;
   fade: number;
+  /** Zonas desenfocadas y PiP (en ese orden, antes de las capas). */
+  blurs?: BlurDraw[];
+  pips?: PipDraw[];
   /** Capas RGBA del tamaño del lienzo, en orden. `key` cambia cuando cambia el contenido. */
   layers: { source: TexImageSource; key: string }[];
 }
@@ -63,6 +82,14 @@ export class Renderer {
   private transProg: Program;
   private blitProg: Program;
   private overlayProg: Program;
+  private blurHProg: Program;
+  private blurVProg: Program;
+  private pixProg: Program;
+  private pipProg: Program;
+  private layerProg: Program;
+  private pipTex: WebGLTexture[] = [];
+  private shadowTex: WebGLTexture[] = [];
+  private shadowKeys: string[] = [];
   private vao: WebGLVertexArrayObject;
   private targets: Target[] = [];
   private tw = 0;
@@ -88,12 +115,17 @@ export class Renderer {
     this.transProg = this.program(TRANSITION_FRAG, ["uSize", "uA", "uB", "uP", "uKind"]);
     this.blitProg = this.program(BLIT_FRAG, ["uSize", "uSrc", "uSrcSize", "uFade"]);
     this.overlayProg = this.program(OVERLAY_FRAG, ["uSize", "uBase", "uLayer", "uOpacity"]);
+    this.blurHProg = this.program(BLUR_H_FRAG, ["uSize", "uSrc", "uZone", "uR"]);
+    this.blurVProg = this.program(BLUR_V_FRAG, ["uSize", "uBase", "uH", "uZone", "uR"]);
+    this.pixProg = this.program(PIXELATE_FRAG, ["uSize", "uBase", "uZone", "uN"]);
+    this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius"]);
+    this.layerProg = this.program(LAYER_FRAG, ["uSize", "uLayer"]);
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    for (const p of [this.clipProg, this.transProg, this.blitProg, this.overlayProg]) {
+    for (const p of [this.clipProg, this.transProg, this.blitProg, this.overlayProg, this.blurHProg, this.blurVProg, this.pixProg, this.pipProg, this.layerProg]) {
       const loc = gl.getAttribLocation(p.prog, "aPos");
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -243,9 +275,93 @@ export class Renderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       result = tc;
     }
+    // Zonas desenfocadas / pixeladas: siempre a otro FBO (no se lee y escribe el mismo).
+    for (const z of f.blurs ?? []) {
+      const others = this.targets.filter((t) => t !== result);
+      const [tmp, out] = others;
+      if (z.mode === "blur") {
+        const R = Math.max(1, Math.min(128, Math.round(z.size)));
+        let P = this.blurHProg;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, tmp.fbo);
+        gl.viewport(0, 0, renderW, renderH);
+        gl.useProgram(P.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, result.tex);
+        gl.uniform2f(P.loc.uSize, renderW, renderH);
+        gl.uniform1i(P.loc.uSrc, 0);
+        gl.uniform4f(P.loc.uZone, ...z.zone);
+        gl.uniform1i(P.loc.uR, R);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        P = this.blurVProg;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, out.fbo);
+        gl.useProgram(P.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, result.tex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, tmp.tex);
+        gl.uniform2f(P.loc.uSize, renderW, renderH);
+        gl.uniform1i(P.loc.uBase, 0);
+        gl.uniform1i(P.loc.uH, 1);
+        gl.uniform4f(P.loc.uZone, ...z.zone);
+        gl.uniform1i(P.loc.uR, R);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      } else {
+        const P = this.pixProg;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, out.fbo);
+        gl.viewport(0, 0, renderW, renderH);
+        gl.useProgram(P.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, result.tex);
+        gl.uniform2f(P.loc.uSize, renderW, renderH);
+        gl.uniform1i(P.loc.uBase, 0);
+        gl.uniform4f(P.loc.uZone, ...z.zone);
+        gl.uniform1f(P.loc.uN, Math.max(1, z.size));
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      result = out;
+    }
+    // Picture-in-picture: sombra y video se dibujan encima, con blending.
+    (f.pips ?? []).forEach((pip, i) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, result.fbo);
+      gl.viewport(0, 0, renderW, renderH);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      if (pip.shadow) {
+        while (this.shadowTex.length <= i) {
+          this.shadowTex.push(this.texture(false));
+          this.shadowKeys.push("");
+        }
+        const P = this.layerProg;
+        gl.useProgram(P.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.shadowTex[i]);
+        if (this.shadowKeys[i] !== pip.shadow.key) {
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pip.shadow.source);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+          this.shadowKeys[i] = pip.shadow.key;
+        }
+        gl.uniform2f(P.loc.uSize, renderW, renderH);
+        gl.uniform1i(P.loc.uLayer, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+      while (this.pipTex.length <= i) this.pipTex.push(this.texture(true));
+      const P = this.pipProg;
+      gl.useProgram(P.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.pipTex[i]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pip.source);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.uniform2f(P.loc.uSize, renderW, renderH);
+      gl.uniform1i(P.loc.uTex, 0);
+      gl.uniform4f(P.loc.uRect, pip.rect.x, pip.rect.y, pip.rect.w, pip.rect.h);
+      gl.uniform1f(P.loc.uRadius, pip.radius);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.disable(gl.BLEND);
+    });
     // Capas (texto, subtítulos, logos): alternando entre dos FBO.
     for (const layer of f.layers) {
-      const dst = result === tc ? tb : tc;
+      const dst = this.targets.find((t) => t !== result && t !== ta) ?? (result === tc ? tb : tc);
       const P = this.overlayProg;
       gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
       gl.viewport(0, 0, renderW, renderH);

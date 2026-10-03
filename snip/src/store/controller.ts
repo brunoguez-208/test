@@ -15,8 +15,8 @@ import {
 } from "../lib/platform";
 import { basename, dirname, isAudio, isProjectFile, isVideo, stem } from "../lib/files";
 import { toAppError, type AppError, type ExportJob, type QueueItem, type RasterSpec } from "../lib/types";
-import { decorSignature, hasDecor, renderDecorSequence, type DecorSequence } from "../engine/raster";
-import { addImage, addText, setCues } from "../project/overlayOps";
+import { decorSignature, hasDecor, renderDecorSequence, renderZoneAssets, type DecorSequence, type ZoneAssets } from "../engine/raster";
+import { addBlur, addImage, addPip, addText, setCues } from "../project/overlayOps";
 import { formatSrt, parseSrt } from "../project/srt";
 import type { Clip, ExportSettings, MediaRef, Project } from "../project/model";
 import { canvasFps, canvasFpsExpr } from "../project/model";
@@ -656,6 +656,46 @@ export async function addLogoWithDialog() {
   }
 }
 
+/** Zona desenfocada o pixelada en el playhead. */
+export function addBlurAtPlayhead(mode: "blur" | "pixelate") {
+  const p = activeProject();
+  if (!p || !p.clips.length) return;
+  let id = "";
+  edit((q) => {
+    const [r, newId] = addBlur(q, useEditor.getState().time, mode);
+    id = newId;
+    return r;
+  });
+  setSelection([id]);
+  useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+}
+
+/** Picture-in-picture: elegir un video y ponerlo abajo a la derecha desde el playhead. */
+export async function addPipWithDialog() {
+  const p = activeProject();
+  if (!p || !p.clips.length) {
+    pushToast({ severity: "caution", title: "Agregá un video principal antes del picture-in-picture" });
+    return;
+  }
+  const [path] = await pickFiles("Elegí el video para el picture-in-picture", [VIDEO_FILTER]);
+  if (!path) return;
+  try {
+    const m = await probe(path);
+    if (m.kind !== "video") throw new EditError("Elegí un video.");
+    void ensureWaveform(m);
+    let id = "";
+    edit((q) => {
+      const [r, newId] = addPip(q, m, useEditor.getState().time);
+      id = newId;
+      return r;
+    });
+    setSelection([id]);
+    useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+  } catch (e) {
+    notifyError("No se pudo agregar el video", e);
+  }
+}
+
 // ------------------------------- Subtítulos -------------------------------
 
 export async function importSrtWithDialog() {
@@ -810,24 +850,41 @@ async function blobToBase64(b: Blob): Promise<string> {
   return btoa(bin);
 }
 
+let zoneCache: { sig: string; assets: ZoneAssets } | null = null;
+
 /**
- * Genera (o reusa) la secuencia de PNG de la capa de decoración y la escribe en
- * una carpeta propia del trabajo. Devuelve null si el proyecto no tiene capas.
+ * Genera (o reusa) las capas rasterizadas de la exportación (textos/subtítulos/
+ * logos, máscaras de zonas desenfocadas y del PiP) y las escribe en una carpeta
+ * propia del trabajo. Devuelve null si el proyecto no tiene ninguna.
  */
 export async function prepareRaster(p: Project): Promise<RasterSpec | null> {
-  if (!hasDecor(p)) return null;
-  const sig = `${decorSignature(p)}#${p.canvas.width}x${p.canvas.height}#${totalDuration(p).toFixed(4)}`;
-  let seq = decorCache?.sig === sig ? decorCache.seq : null;
-  if (!seq) {
-    const toast = pushToast({ severity: "info", title: "Preparando textos y subtítulos…" });
-    try {
-      await player().images.ready(p);
-      seq = await renderDecorSequence(p, player().images);
-    } finally {
-      dismissToast(toast);
+  const base = `${p.canvas.width}x${p.canvas.height}#${totalDuration(p).toFixed(4)}#${p.canvas.fpsNum}/${p.canvas.fpsDen}`;
+  const zoneSig = `${JSON.stringify(p.overlays.filter((o) => o.type === "blur" || o.type === "video"))}#${base}`;
+  const needsDecor = hasDecor(p);
+  const needsZones = p.overlays.some((o) => o.type === "blur" || o.type === "video");
+  if (!needsDecor && !needsZones) return null;
+  let seq: DecorSequence | null = null;
+  let zones: ZoneAssets | null = null;
+  const toast = pushToast({ severity: "info", title: "Preparando textos y capas…" });
+  try {
+    if (needsDecor) {
+      const sig = `${decorSignature(p)}#${base}`;
+      seq = decorCache?.sig === sig ? decorCache.seq : null;
+      if (!seq) {
+        await player().images.ready(p);
+        seq = await renderDecorSequence(p, player().images);
+        if (seq) decorCache = { sig, seq };
+      }
     }
-    if (!seq) return null;
-    decorCache = { sig, seq };
+    if (needsZones) {
+      zones = zoneCache?.sig === zoneSig ? zoneCache.assets : null;
+      if (!zones) {
+        zones = await renderZoneAssets(p);
+        if (zones) zoneCache = { sig: zoneSig, assets: zones };
+      }
+    }
+  } finally {
+    dismissToast(toast);
   }
   const id = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let dir = "";
@@ -840,14 +897,35 @@ export async function prepareRaster(p: Project): Promise<RasterSpec | null> {
     batch = [];
     size = 0;
   };
-  for (const f of seq.frames) {
-    batch.push({ name: f.name, data: await blobToBase64(f.png) });
-    size += f.png.size;
+  const put = async (name: string, png: Blob) => {
+    batch.push({ name, data: await blobToBase64(png) });
+    size += png.size;
     if (size > 4_000_000) await flush();
+  };
+  for (const f of seq?.frames ?? []) await put(f.name, f.png);
+  const maskSeqs = Object.entries(zones?.masks ?? {});
+  for (const [, ms] of maskSeqs) for (const f of ms.frames) await put(f.name, f.png);
+  const pipEntries = Object.entries(zones?.pips ?? {});
+  for (const [i, [, a]] of pipEntries.entries()) {
+    await put(`pipmask${i}.png`, a.mask);
+    if (a.shadow) await put(`pipshadow${i}.png`, a.shadow);
   }
   await flush();
-  const decor = await api.writeRasterList(id, "decor.ffconcat", seq.list);
-  return { dir, decor };
+  const sep = dir.includes("\\") ? "\\" : "/";
+  const spec: RasterSpec = { dir, masks: {}, pips: {} };
+  if (seq) spec.decor = await api.writeRasterList(id, "decor.ffconcat", seq.list);
+  for (const [i, [oid, ms]] of maskSeqs.entries()) spec.masks![oid] = await api.writeRasterList(id, `blur${i}.ffconcat`, ms.list);
+  for (const [i, [oid, a]] of pipEntries.entries()) {
+    spec.pips![oid] = {
+      mask: `${dir}${sep}pipmask${i}.png`,
+      shadow: a.shadow ? `${dir}${sep}pipshadow${i}.png` : null,
+      width: a.rect.w,
+      height: a.rect.h,
+      x: a.rect.x,
+      y: a.rect.y,
+    };
+  }
+  return spec;
 }
 
 export async function enqueueExport(opts: { window?: { start: number; end: number }; label?: string; output?: string | null } = {}) {

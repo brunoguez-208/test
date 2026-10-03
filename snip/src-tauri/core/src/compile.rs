@@ -449,10 +449,20 @@ pub fn compile(p: &Project, o: &CompileOptions) -> Result<Compiled, AppError> {
         vacc = Some(filters::apply_overlays(&mut g, &mut inputs, p, o.raster, &v, base, seq_dur)?);
     }
 
-    // 4) Música
+    // 4) Música y audio de los PiP
     if want_audio {
         if let Some(main) = aacc.clone() {
-            aacc = Some(mix_music(&mut g, &mut inputs, p, &main, base, seq_dur)?);
+            let mut mixed = mix_music(&mut g, &mut inputs, p, &main, base, seq_dur)?;
+            let pips = filters::pip_audio(&mut g, &mut inputs, p, base, seq_dur)?;
+            if !pips.is_empty() {
+                let mut all = vec![mixed.clone()];
+                all.extend(pips);
+                let refs: Vec<&str> = all.iter().map(String::as_str).collect();
+                let out = g.label("mix");
+                g.add(&refs, &format!("amix=inputs={}:duration=first:normalize=0:dropout_transition=0,{}", all.len(), normalize_audio(seq_dur)), &out);
+                mixed = out;
+            }
+            aacc = Some(mixed);
         }
     }
 

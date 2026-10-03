@@ -13,6 +13,7 @@ import { ColorSection } from "./video/ColorSection";
 import { LooksSection } from "./video/LooksSection";
 import { EnhanceSection } from "./video/EnhanceSection";
 import { ImageOverlaySection } from "./video/ImageOverlaySection";
+import { ZonesSection } from "./video/ZonesSection";
 
 export function VideoTab({ project }: { project: Project }) {
   const total = totalDuration(project);
@@ -21,10 +22,12 @@ export function VideoTab({ project }: { project: Project }) {
   const { clip, index, explicit } = useTargetClip(project);
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   const imageSelected = project.overlays.some((o) => o.type === "image" && selection.includes(o.id));
+  const zoneSelected = project.overlays.some((o) => (o.type === "blur" || o.type === "video") && selection.includes(o.id));
   const media = clip ? project.media.find((m) => m.id === clip.mediaId) : null;
   return (
     <div className="flex flex-col gap-6" data-testid="video-tab">
       {imageSelected && <ImageOverlaySection project={project} />}
+      {zoneSelected && <ZonesSection project={project} />}
       {clip && (
         <>
           <div className="min-w-0">
@@ -44,6 +47,7 @@ export function VideoTab({ project }: { project: Project }) {
         </>
       )}
       {!imageSelected && <ImageOverlaySection project={project} />}
+      {!zoneSelected && <ZonesSection project={project} />}
       <Section title="Fundido a negro">
         <Field label="Al inicio" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{f.fadeIn ? `${fmtNum(f.fadeIn)} s` : "No"}</span>}>
           <RangeSlider

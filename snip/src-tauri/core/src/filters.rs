@@ -2,7 +2,7 @@
 //!
 //! Cada función devuelve filtros con solo números (nunca texto del usuario).
 
-use crate::error::AppError;
+use crate::error::{AppError, ErrorKind};
 use crate::graph::{Graph, Inputs};
 use crate::project::*;
 
@@ -165,41 +165,167 @@ pub fn zoom_filters(keys: &[ZoomKey], canvas: &Canvas) -> Vec<String> {
     )]
 }
 
+/// Radio del desenfoque (px del lienzo) para una intensidad 0..=1 (el mismo usa el preview).
+pub fn blur_radius(strength: f64, canvas_h: u32) -> u32 {
+    ((strength.clamp(0.0, 1.0) * canvas_h as f64 * 0.04).round() as u32).max(1)
+}
+
+/// Tamaño del bloque del pixelado (px del lienzo).
+pub fn pixel_size(strength: f64, canvas_h: u32) -> u32 {
+    ((strength.clamp(0.0, 1.0) * canvas_h as f64 * 0.06).round() as u32).max(2)
+}
+
+/// Parte de [start, end) del timeline que cae en la secuencia exportada
+/// [base, base + seq_dur): (desde, hasta) en tiempo del timeline.
+fn visible_part(start: f64, end: f64, base: f64, seq_dur: f64) -> Option<(f64, f64)> {
+    let s0 = start.max(base);
+    let s1 = end.min(base + seq_dur);
+    (s1 - s0 > EPS_T).then_some((s0, s1))
+}
+
+const EPS_T: f64 = 1e-4;
+
+fn num(v: f64) -> String {
+    crate::compile::num(v)
+}
+
 /// Superposiciones sobre la secuencia: devuelve la etiqueta del resultado.
 ///
-/// La capa de "decoración" (textos, subtítulos, logos) la rasteriza el frontend
-/// con el mismo código del preview y llega como una lista ffconcat de PNG que
-/// cubre todo el timeline desde 0; acá se recorta a la ventana exportada.
+/// Orden (igual que el preview): zonas desenfocadas → picture-in-picture →
+/// capa de "decoración" (textos, subtítulos, logos). Las máscaras, la sombra
+/// del PiP y la decoración las rasteriza el frontend con el mismo código del
+/// preview; la decoración cubre todo el timeline y acá se recorta a la ventana.
 pub fn apply_overlays(
     g: &mut Graph,
     inputs: &mut Inputs,
-    _p: &Project,
+    p: &Project,
     raster: Option<&crate::compile::RasterInputs>,
     video: &str,
     base: f64,
     seq_dur: f64,
 ) -> Result<String, AppError> {
-    let Some(r) = raster else {
-        return Ok(video.to_string());
-    };
     let mut cur = video.to_string();
-    if let Some(decor) = &r.decor {
-        let k = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], decor);
-        let d = g.label("dec");
+    let mut ordered: Vec<&Overlay> = p.overlays.iter().collect();
+    ordered.sort_by(|a, b| a.lane.cmp(&b.lane).then(a.start.total_cmp(&b.start)));
+    let missing = || AppError::with_message(ErrorKind::BadProject, "Faltan las capas de desenfoque o PiP: volvé a exportar.");
+
+    // 1) Zonas desenfocadas o pixeladas.
+    for o in ordered.iter().filter(|o| matches!(o.content, OverlayContent::Blur(_))) {
+        let OverlayContent::Blur(b) = &o.content else { continue };
+        if visible_part(o.start, o.start + o.duration, base, seq_dur).is_none() {
+            continue;
+        }
+        let mask = raster.and_then(|r| r.masks.get(&o.id)).ok_or_else(missing)?;
+        let k = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], mask);
+        let (w, h) = (p.canvas.width, p.canvas.height);
+        let mk = g.label("mk");
+        g.add(
+            &[&format!("{k}:v:0")],
+            &format!("format=gray,scale={w}:{h},trim=start={}:duration={},setpts=PTS-STARTPTS", num(base), num(seq_dur + 1.0)),
+            &mk,
+        );
+        let (a, bb) = (g.label("bs"), g.label("bs"));
+        g.add(&[&cur], "split", &format!("{a}][{bb}"));
+        let effect = match b.mode {
+            BlurMode::Blur => {
+                let r = blur_radius(b.strength, h);
+                format!("boxblur=luma_radius={r}:luma_power=1:chroma_radius={}:chroma_power=1", (r / 2).max(1))
+            }
+            BlurMode::Pixelate => {
+                let n = pixel_size(b.strength, h);
+                format!("pixelize=width={n}:height={n}:mode=avg")
+            }
+        };
+        let bl = g.label("bl");
+        g.add(&[&bb], &format!("{effect},format=yuva420p"), &bl);
+        let ba = g.label("ba");
+        g.add(&[&bl, &mk], "alphamerge", &ba);
+        let out = g.label("ov");
+        g.add(&[&a, &ba], "overlay=format=auto", &out);
+        cur = out;
+    }
+
+    // 2) Picture-in-picture.
+    let fps = p.canvas.fps_expr();
+    for o in ordered.iter().filter(|o| matches!(o.content, OverlayContent::Video(_))) {
+        let OverlayContent::Video(v) = &o.content else { continue };
+        let Some((s0, s1)) = visible_part(o.start, o.start + o.duration, base, seq_dur) else { continue };
+        let spec = raster.and_then(|r| r.pip.get(&o.id)).ok_or_else(missing)?;
+        let media = p.media(&v.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
+        let (ss, dur, offset) = (v.in_point + (s0 - o.start), s1 - s0, s0 - base);
+        let k = inputs.add(vec!["-ss".into(), num(ss), "-t".into(), num(dur)], &media.path);
+        let pv = g.label("pv");
         g.add(
             &[&format!("{k}:v:0")],
             &format!(
-                "format=rgba,trim=start={}:duration={},setpts=PTS-STARTPTS",
-                crate::compile::num(base),
-                crate::compile::num(seq_dur + 1.0)
+                "setpts=PTS-STARTPTS,fps={fps},scale={}:{}:flags=lanczos,setsar=1,format=yuva420p,tpad=stop_mode=clone:stop_duration=1,trim=duration={}",
+                spec.width,
+                spec.height,
+                num(dur)
             ),
-            &d,
+            &pv,
         );
+        let mk = inputs.add(vec!["-loop".into(), "1".into(), "-t".into(), num(dur)], &spec.mask);
+        let pm = g.label("pm");
+        g.add(&[&format!("{mk}:v:0")], &format!("format=gray,scale={}:{},fps={fps}", spec.width, spec.height), &pm);
+        let pa = g.label("pa");
+        g.add(&[&pv, &pm], &format!("alphamerge,setpts=PTS+{}/TB", num(offset)), &pa);
+        let enable = format!("enable='between(t,{},{})'", num(offset), num(offset + dur - EPS_T));
+        if let Some(shadow) = &spec.shadow {
+            let sk = inputs.add(vec!["-loop".into(), "1".into(), "-t".into(), num(dur)], shadow);
+            let ps = g.label("ps");
+            g.add(&[&format!("{sk}:v:0")], &format!("format=rgba,fps={fps},setpts=PTS+{}/TB", num(offset)), &ps);
+            let out = g.label("ov");
+            g.add(&[&cur, &ps], &format!("overlay=0:0:eof_action=pass:format=auto:{enable}"), &out);
+            cur = out;
+        }
+        let out = g.label("ov");
+        g.add(&[&cur, &pa], &format!("overlay=x={}:y={}:eof_action=pass:format=auto:{enable}", spec.x, spec.y), &out);
+        cur = out;
+    }
+
+    // 3) Decoración (textos, subtítulos, logos).
+    if let Some(decor) = raster.and_then(|r| r.decor.as_ref()) {
+        let k = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], decor);
+        let d = g.label("dec");
+        g.add(&[&format!("{k}:v:0")], &format!("format=rgba,trim=start={}:duration={},setpts=PTS-STARTPTS", num(base), num(seq_dur + 1.0)), &d);
         let out = g.label("ov");
         g.add(&[&cur, &d], "overlay=format=auto", &out);
         cur = out;
     }
     Ok(cur)
+}
+
+/// Audio de los picture-in-picture con volumen (ya ubicado en la secuencia).
+pub fn pip_audio(g: &mut Graph, inputs: &mut Inputs, p: &Project, base: f64, seq_dur: f64) -> Result<Vec<String>, AppError> {
+    let mut out = vec![];
+    for o in &p.overlays {
+        let OverlayContent::Video(v) = &o.content else { continue };
+        if v.volume <= 1e-6 {
+            continue;
+        }
+        let Some((s0, s1)) = visible_part(o.start, o.start + o.duration, base, seq_dur) else { continue };
+        let media = p.media(&v.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
+        if !media.has_audio {
+            continue;
+        }
+        let (ss, dur, offset) = (v.in_point + (s0 - o.start), s1 - s0, s0 - base);
+        let k = inputs.add(vec!["-ss".into(), num(ss), "-t".into(), num(dur)], &media.path);
+        let mut chain = vec![
+            "asetpts=PTS-STARTPTS".to_string(),
+            "aresample=48000".to_string(),
+            "aformat=sample_fmts=fltp:channel_layouts=stereo".to_string(),
+            format!("volume={}", num(v.volume.min(2.0))),
+        ];
+        let delay = (offset * 1000.0).round() as i64;
+        if delay > 0 {
+            chain.push(format!("adelay=delays={delay}:all=1"));
+        }
+        let l = g.label("pip");
+        g.add(&[&format!("{k}:a:0")], &chain.join(","), &l);
+        out.push(l);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -276,6 +402,71 @@ mod tests {
         let f = g.build();
         assert!(f.contains("[0:v:0]format=rgba,trim=start=2.500000:duration=5.000000,setpts=PTS-STARTPTS[dec"), "{f}");
         assert!(f.contains("overlay=format=auto[") && f.ends_with(&format!("[{out}]")), "{f}");
+    }
+
+    fn with_overlay(content: OverlayContent, start: f64, duration: f64) -> Project {
+        let mut p = crate::testutil::sample_project();
+        p.overlays.push(Overlay { id: "o1".into(), start, duration, lane: 0, content });
+        p
+    }
+
+    #[test]
+    fn blur_uses_mask_alphamerge_and_needs_raster() {
+        let rect = Rect { x: 0.1, y: 0.1, w: 0.3, h: 0.3 };
+        let p = with_overlay(OverlayContent::Blur(BlurLayer { mode: BlurMode::Blur, strength: 0.5, rect, keys: vec![] }), 1.0, 2.0);
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        // Sin máscaras no se exporta (no puede quedar una zona sin tapar).
+        assert_eq!(apply_overlays(&mut g, &mut inputs, &p, None, "v", 0.0, 10.0).unwrap_err().kind, ErrorKind::BadProject);
+        let mut r = crate::compile::RasterInputs::default();
+        r.masks.insert("o1".into(), "/r/blur-o1.ffconcat".into());
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 0.0, 10.0).unwrap();
+        let f = g.build();
+        let rad = blur_radius(0.5, p.canvas.height);
+        assert!(f.contains(&format!("boxblur=luma_radius={rad}:luma_power=1")), "{f}");
+        assert!(f.contains("alphamerge") && f.contains("format=gray"), "{f}");
+        assert_eq!(inputs.list[0][..4], ["-f", "concat", "-safe", "0"]);
+        // Pixelado.
+        let p = with_overlay(OverlayContent::Blur(BlurLayer { mode: BlurMode::Pixelate, strength: 1.0, rect, keys: vec![] }), 1.0, 2.0);
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 0.0, 10.0).unwrap();
+        assert!(g.build().contains(&format!("pixelize=width={n}:height={n}:mode=avg", n = pixel_size(1.0, p.canvas.height))));
+        // Fuera de la ventana exportada: nada.
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        assert_eq!(apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 5.0, 2.0).unwrap(), "v");
+    }
+
+    #[test]
+    fn pip_is_cut_to_the_window_and_mixes_audio() {
+        let mut p = with_overlay(
+            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 2.0, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.5 }),
+            1.0,
+            4.0,
+        );
+        p.media[0].has_audio = true;
+        let mut r = crate::compile::RasterInputs::default();
+        r.pip.insert(
+            "o1".into(),
+            crate::compile::PipRaster { mask: "/r/pip-mask.png".into(), shadow: Some("/r/pip-shadow.png".into()), width: 384, height: 216, x: 800, y: 450, shadow_x: 0, shadow_y: 0 },
+        );
+        // Exportando el fragmento [3, 6): el PiP (1..5) se ve de 3 a 5, desde el segundo 4 del original.
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 3.0, 3.0).unwrap();
+        assert_eq!(inputs.list[0][..4], ["-ss", "4.000000", "-t", "2.000000"]);
+        assert_eq!(inputs.list[1][..4], ["-loop", "1", "-t", "2.000000"]);
+        let f = g.build();
+        assert!(f.contains("scale=384:216:flags=lanczos") && f.contains("alphamerge,setpts=PTS+0.000000/TB"), "{f}");
+        assert!(f.contains("overlay=x=800:y=450:eof_action=pass:format=auto:enable='between(t,0.000000,1.999900)'"), "{f}");
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        let a = pip_audio(&mut g, &mut inputs, &p, 0.0, 10.0).unwrap();
+        assert_eq!(a.len(), 1);
+        let f = g.build();
+        assert!(f.contains("volume=0.500000") && f.contains("adelay=delays=1000:all=1"), "{f}");
+        // Sin volumen no se mezcla.
+        if let Some(OverlayContent::Video(v)) = p.overlays.last_mut().map(|o| &mut o.content) {
+            v.volume = 0.0;
+        }
+        assert!(pip_audio(&mut Graph::new(), &mut Inputs::new(), &p, 0.0, 10.0).unwrap().is_empty());
     }
 
     #[test]

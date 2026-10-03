@@ -12,7 +12,7 @@ import type { MediaRef, Project, TransitionKind } from "../src/project/model";
 import { canvasFps } from "../src/project/model";
 import { fitCanvas, insertMedia, newProject, setTransition, updateClip } from "../src/project/ops";
 import { LOOKS } from "../src/engine/color";
-import { addImage, addText, setCues } from "../src/project/overlayOps";
+import { addBlur, addImage, addPip, addText, setCues, updateOverlay } from "../src/project/overlayOps";
 import { layout } from "../src/project/timeline";
 
 const FF_DIR = process.env.SNIP_FFMPEG_DIR ?? "/opt/ffmpeg9/bin";
@@ -66,7 +66,7 @@ test.afterAll(() => {
   else if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-function exportProject(p: Project, name: string, raster: { decor: string } | null = null): string {
+function exportProject(p: Project, name: string, raster: Raster | null = null): string {
   const out = join(dir, `${name}.mp4`);
   const job = join(dir, `${name}.json`);
   writeFileSync(job, JSON.stringify({ project: p, output: out, saveProject: false, raster }));
@@ -111,18 +111,30 @@ function mediaUrls(p: Project): Record<string, string> {
   return Object.fromEntries(p.media.map((m) => [m.path, `/parity-media/${encodeURIComponent(m.path.split(/[\\/]/).pop()!)}`]));
 }
 
-/** Capa de decoración generada en el navegador (igual que la app) y escrita a disco. */
-async function rasterFor(page: Page, p: Project, tag: string): Promise<{ decor: string } | null> {
+type Raster = { decor?: string; masks: Record<string, string>; pips: Record<string, { mask: string; shadow: string | null; width: number; height: number; x: number; y: number }> };
+
+/** Capas generadas en el navegador (igual que la app) y escritas a disco. */
+async function rasterFor(page: Page, p: Project, tag: string): Promise<Raster | null> {
   const r = await page.evaluate(
-    ({ p, urls }) => (window as unknown as { __snipParity: { raster: (...a: unknown[]) => Promise<{ files: { name: string; data: string }[]; list: string } | null> } }).__snipParity.raster(p, urls),
+    ({ p, urls }) =>
+      (window as unknown as { __snipParity: { raster: (...a: unknown[]) => Promise<{ files: { name: string; data: string }[]; decor: string | null; masks: Record<string, string>; pips: Raster["pips"] }> } }).__snipParity.raster(p, urls),
     { p, urls: mediaUrls(p) },
   );
-  if (!r) return null;
+  if (!r.files.length) return null;
   const rd = join(dir, `raster-${tag}`);
   mkdirSync(rd, { recursive: true });
   for (const f of r.files) writeFileSync(join(rd, f.name), Buffer.from(f.data, "base64"));
-  writeFileSync(join(rd, "decor.ffconcat"), r.list);
-  return { decor: join(rd, "decor.ffconcat") };
+  const out: Raster = { masks: {}, pips: {} };
+  if (r.decor) {
+    writeFileSync(join(rd, "decor.ffconcat"), r.decor);
+    out.decor = join(rd, "decor.ffconcat");
+  }
+  Object.entries(r.masks).forEach(([id, list], i) => {
+    writeFileSync(join(rd, `blur${i}.ffconcat`), list);
+    out.masks[id] = join(rd, `blur${i}.ffconcat`);
+  });
+  for (const [id, pp] of Object.entries(r.pips)) out.pips[id] = { ...pp, mask: join(rd, pp.mask), shadow: pp.shadow ? join(rd, pp.shadow) : null };
+  return out;
 }
 
 async function check(page: Page, p: Project, frames: Record<string, number>, tag: string, min: number, control = false) {
@@ -252,4 +264,22 @@ test("paridad: textos animados, logo y subtítulos palabra por palabra", async (
   ]);
   p = { ...p, subtitles: { ...p.subtitles, wordByWord: true, style: { ...p.subtitles.style, background: { color: "#000000", opacity: 0.5, padding: 0.3, radius: 0.2 } } } };
   await check(page, p, { "pop-entrando": 20, "zocalo-deslizando": 35, "quieto": 50, "palabra-1": 80, "palabra-3": 110, "impacto": 108, "logo-y-saliendo": 160 }, "capas", 0.95);
+});
+
+test("paridad: zonas desenfocadas y pixeladas (con keyframes) y picture-in-picture", async ({ page }) => {
+  test.setTimeout(300_000);
+  let p = base([["a.webm", 0, 4], ["b.webm", 0, 2]]);
+  let blur: string, pix: string, pip: string;
+  [p, blur] = addBlur(p, 0.5, "blur");
+  [p, pix] = addBlur(p, 1, "pixelate");
+  p = updateOverlay(p, pix, (o) => (o.type === "blur" ? { ...o, strength: 0.8, rect: { x: 0.05, y: 0.55, w: 0.3, h: 0.35 } } : o));
+  // La zona desenfocada sigue algo que se mueve (dos keyframes).
+  p = updateOverlay(p, blur, (o) =>
+    o.type === "blur"
+      ? { ...o, duration: 3, keys: [{ id: 1, t: 0, rect: { x: 0.1, y: 0.1, w: 0.25, h: 0.25 } }, { id: 2, t: 3, rect: { x: 0.6, y: 0.4, w: 0.3, h: 0.3 } }] }
+      : o,
+  );
+  [p, pip] = addPip(p, media["c.webm"], 2);
+  p = updateOverlay(p, pip, (o) => (o.type === "video" ? { ...o, inPoint: 1, duration: 3, radius: 0.12 } : o));
+  await check(page, p, { "solo-desenfoque": 20, "zona-moviendose": 50, "pixelado": 60, "pip-entrando": 61, "pip-y-zonas": 80, "pip-solo": 140 }, "zonas", 0.95);
 });
