@@ -54,6 +54,11 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; Snip 1 y la primera versión de Snip 2 dejaban FFmpeg suelto junto al .exe;
+  ; ahora vive en ffmpeg\ (build "shared", con sus DLL).
+  Delete "$INSTDIR\ffmpeg.exe"
+  Delete "$INSTDIR\ffprobe.exe"
+  Delete "$INSTDIR\FFMPEG-LICENSE.txt"
   !insertmacro SNIP_RESTORE_DEFAULT "mp4"
   !insertmacro SNIP_RESTORE_DEFAULT "mov"
   !insertmacro SNIP_RESTORE_DEFAULT "mkv"

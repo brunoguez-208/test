@@ -10,3 +10,5 @@ e2e/screenshots/
 *.log
 src-tauri/binaries/whisper/*.dll
 src-tauri/binaries/whisper/*.exe
+src-tauri/binaries/ffmpeg/*.dll
+src-tauri/binaries/ffmpeg/*.exe

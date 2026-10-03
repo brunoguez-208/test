@@ -40,6 +40,16 @@ test.describe("textos", () => {
     await expect.poll(async () => ((await project(page))!.overlays[0] as { x: number }).x).toBeCloseTo(0.5, 2);
   });
 
+  test("escribir enseguida no pierde letras ni dispara atajos", async ({ page }) => {
+    await page.getByTestId("add-text").click();
+    await page.keyboard.type("Vacaciones mil");
+    await expect(page.getByTestId("text-content")).toHaveValue("Vacaciones mil");
+    await expect(page.getByTestId("overlay-item")).toContainText("Vacaciones mil");
+    // La «i», la «o» y la «m» no marcaron rango ni marcador.
+    await expect.poll(async () => (await project(page))?.markers.length ?? 0).toBe(0);
+    await expect(page.getByTestId("io-bar")).toHaveCount(0);
+  });
+
   test("plantillas, estilo y animaciones", async ({ page }) => {
     await page.getByTestId("inspector-tab-text").click();
     await page.getByTestId("template-impact").click();

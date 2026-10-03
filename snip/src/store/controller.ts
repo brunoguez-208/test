@@ -619,16 +619,46 @@ export function addTextAtPlayhead(template = "title") {
   requestTextFocus();
 }
 
-/** Pide el foco en el cuadro de texto (si el editor todavía no se montó, lo toma al montarse). */
+/**
+ * Pide el foco en el cuadro de texto. Si el editor todavía no se montó (la
+ * pestaña está animando), lo que se escriba mientras tanto se guarda y se
+ * vuelca en el texto: no se pierden letras ni se disparan atajos.
+ */
 let pendingTextFocus = false;
+let typedAhead = "";
+let typeAheadTimer = 0;
+function captureTypeAhead(e: KeyboardEvent) {
+  if (!pendingTextFocus || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key.length === 1) typedAhead += e.key;
+  else if (e.key === "Backspace") typedAhead = typedAhead.slice(0, -1);
+  else return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}
+function stopTypeAhead() {
+  window.removeEventListener("keydown", captureTypeAhead, true);
+  window.clearTimeout(typeAheadTimer);
+}
 export function requestTextFocus() {
   pendingTextFocus = true;
+  typedAhead = "";
+  stopTypeAhead();
+  window.addEventListener("keydown", captureTypeAhead, true);
+  // Red de seguridad: si el editor nunca aparece, se suelta el teclado.
+  typeAheadTimer = window.setTimeout(() => {
+    pendingTextFocus = false;
+    stopTypeAhead();
+  }, 2000);
   window.dispatchEvent(new CustomEvent("snip:focus-text"));
 }
-export function takeTextFocus(): boolean {
-  const v = pendingTextFocus;
+/** El editor toma el foco: devuelve null si no había pedido, o lo escrito mientras tanto. */
+export function takeTextFocus(): string | null {
+  if (!pendingTextFocus) return null;
   pendingTextFocus = false;
-  return v;
+  stopTypeAhead();
+  const t = typedAhead;
+  typedAhead = "";
+  return t;
 }
 
 /** Logo o marca de agua: arriba a la derecha, durante todo el video. */

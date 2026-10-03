@@ -53,7 +53,8 @@ fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// Busca ffmpeg/ffprobe junto al ejecutable (así los deja `bundle.externalBin`).
+/// Busca ffmpeg/ffprobe en la carpeta `ffmpeg\` de la instalación (build
+/// "shared": comparten las DLL que están al lado). Si no, junto al ejecutable.
 pub fn resolve_tools() -> Tools {
     if let Some(dir) = std::env::var_os("SNIP_FFMPEG_DIR") {
         let dir = PathBuf::from(dir);
@@ -62,7 +63,16 @@ pub fn resolve_tools() -> Tools {
             ffprobe: dir.join(format!("ffprobe{}", std::env::consts::EXE_SUFFIX)),
         };
     }
-    let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let sub = exe_dir.join("ffmpeg");
+    let dir = if sub.join(format!("ffmpeg{}", std::env::consts::EXE_SUFFIX)).is_file() {
+        sub
+    } else if cfg!(debug_assertions) && !exe_dir.join(format!("ffmpeg{}", std::env::consts::EXE_SUFFIX)).is_file() {
+        // Desarrollo: los binarios de src-tauri/binaries/ffmpeg.
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join("ffmpeg")
+    } else {
+        exe_dir
+    };
     Tools {
         ffmpeg: dir.join(format!("ffmpeg{}", std::env::consts::EXE_SUFFIX)),
         ffprobe: dir.join(format!("ffprobe{}", std::env::consts::EXE_SUFFIX)),

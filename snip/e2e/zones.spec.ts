@@ -36,6 +36,9 @@ test.describe("zonas y PiP", () => {
     await page.getByTestId("blur-track").click();
     await expect(page.getByTestId("blur-keys")).toContainText("1 keyframe");
     await seek(page, 3);
+    // Que el playhead (y la zona) ya estén en 3 s antes de arrastrar.
+    await expect(page.getByTestId("current-tc")).toHaveValue("00:00:03:00");
+    await page.waitForTimeout(150);
     const r1 = (await rect.boundingBox())!;
     await page.mouse.move(r1.x + r1.width / 2, r1.y + r1.height / 2);
     await page.mouse.down();

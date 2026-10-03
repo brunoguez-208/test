@@ -514,3 +514,87 @@ fn transcription_audio_is_16k_mono_wav_of_the_whole_mix() {
     let e = snip_core::transcribe::extract_audio(&env, &mute, &wav, &JobControl::new(), |_| {}).unwrap_err();
     assert_eq!(e.kind, ErrorKind::NoAudio);
 }
+
+/// Tanda 2: todo junto en un export (imagen, capas, zona y PiP).
+#[test]
+fn image_effects_layers_zones_and_pip_together() {
+    guard!();
+    use snip_core::project_export::{PipSpec, RasterSpec};
+    let root = &fx().root;
+    let r = root.join("raster-t2");
+    std::fs::create_dir_all(&r).unwrap();
+    let rp = |n: &str| r.join(n).to_string_lossy().into_owned();
+    // Capa de decoración: un PNG con transparencia (como los del frontend) los primeros 2 s.
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=white@0.0:s=640x360,format=rgba,drawbox=x=40:y=280:w=300:h=50:color=yellow@0.9:t=fill:replace=1", "-frames:v", "1", &rp("f1.png")]);
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=white@0.0:s=640x360,format=rgba", "-frames:v", "1", &rp("f2.png")]);
+    std::fs::write(r.join("decor.ffconcat"), "ffconcat version 1.0\nfile 'f1.png'\nduration 2\nfile 'f2.png'\nduration 10\nfile 'f2.png'\n").unwrap();
+    // Máscara de la zona (blanco = desenfocado).
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=black:s=640x360,drawbox=x=100:y=60:w=160:h=120:color=white:t=fill", "-frames:v", "1", &rp("m1.png")]);
+    std::fs::write(r.join("blur.ffconcat"), "ffconcat version 1.0\nfile 'm1.png'\nduration 10\nfile 'm1.png'\n").unwrap();
+    // PiP: máscara redondeada (aproximada con un rectángulo) y sombra.
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=white:s=192x108", "-frames:v", "1", &rp("pm.png")]);
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=black@0.0:s=640x360,format=rgba,drawbox=x=420:y=230:w=200:h=116:color=black@0.4:t=fill:replace=1", "-frames:v", "1", &rp("ps.png")]);
+
+    let a = media("a", "a.mp4");
+    let d = media("d", "d.mov");
+    let c = media("c", "c.webm");
+    let mut p = project(vec![a, d, c], vec![clip("c1", "a", 0.0, 3.0), clip("c2", "d", 0.5, 3.5)]);
+    {
+        let v = &mut p.clips[0].video;
+        v.crop = Some(CropRect { x: 0.1, y: 0.05, w: 0.8, h: 0.9, aspect: None });
+        v.color = ColorAdjust { brightness: 0.1, contrast: 0.2, saturation: -0.3, temperature: 0.4, exposure: 0.1 };
+        v.look = Some(Look { id: "cinema".into(), intensity: 0.8 });
+        v.sharpen = 0.4;
+        v.zoom = vec![
+            ZoomKey { id: 1, t: 0.0, zoom: 1.0, cx: 0.5, cy: 0.5, easing: Easing::Linear },
+            ZoomKey { id: 2, t: 3.0, zoom: 1.6, cx: 0.3, cy: 0.6, easing: Easing::EaseInOut },
+        ];
+    }
+    {
+        let v = &mut p.clips[1].video;
+        v.rotate = 180;
+        v.flip_h = true;
+        v.stabilize = Some(Stabilize { strength: 0.5 });
+        v.denoise = 0.5;
+    }
+    p.overlays.push(Overlay {
+        id: "z".into(),
+        start: 1.0,
+        duration: 3.0,
+        lane: 0,
+        content: OverlayContent::Blur(BlurLayer { mode: BlurMode::Pixelate, strength: 0.5, rect: Rect { x: 0.15, y: 0.15, w: 0.25, h: 0.35 }, keys: vec![] }),
+    });
+    p.overlays.push(Overlay {
+        id: "pip".into(),
+        start: 2.0,
+        duration: 3.0,
+        lane: 1,
+        content: OverlayContent::Video(PipLayer { media_id: "c".into(), in_point: 0.5, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.7 }),
+    });
+    let mut j = job(p, "tanda2.mp4");
+    let mut pips = std::collections::HashMap::new();
+    pips.insert("pip".to_string(), PipSpec { mask: rp("pm.png"), shadow: Some(rp("ps.png")), width: 192, height: 108, x: 416, y: 234, shadow_x: 0, shadow_y: 0 });
+    let mut masks = std::collections::HashMap::new();
+    masks.insert("z".to_string(), r.join("blur.ffconcat").to_string_lossy().into_owned());
+    j.raster = Some(RasterSpec { dir: None, decor: Some(r.join("decor.ffconcat").to_string_lossy().into_owned()), masks, pips });
+    let o = run_job(j);
+    let pr = probe(&o.output);
+    // 3 s + 3 s, 640x360 (lienzo del primer clip: el recorte no cambia el lienzo de un proyecto armado a mano), 30 fps.
+    assert!((pr.duration - 6.0).abs() < 0.12, "duración {}", pr.duration);
+    assert_eq!((pr.width, pr.height), (640, 360));
+    assert!((pr.fps - 30.0).abs() < 0.01);
+    assert_eq!(pr.vcodec.as_deref(), Some("h264"));
+    assert_eq!(pr.acodec.as_deref(), Some("aac"));
+    assert!(frame_count(&o.output) >= 178);
+    // La capa amarilla (decoración) se ve en los primeros 2 s.
+    let yellow = |t: f64| {
+        let out = Command::new(&fx().tools.ffmpeg)
+            .args(["-v", "error", "-ss", &format!("{t}"), "-i", &o.output, "-frames:v", "1", "-vf", "crop=300:50:40:280,scale=1:1,format=rgb24", "-f", "rawvideo", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        (out[0] as i32, out[1] as i32, out[2] as i32)
+    };
+    let (r1, g1, b1) = yellow(1.0);
+    assert!(r1 > 150 && g1 > 150 && b1 < 120, "amarillo: {r1},{g1},{b1}");
+}

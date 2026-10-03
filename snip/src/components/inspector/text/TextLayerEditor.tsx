@@ -70,9 +70,15 @@ export function TextLayerEditor({ project, o }: { project: Project; o: TextOverl
   // "Agregar texto" lleva el foco al cuadro de texto, con todo seleccionado.
   useEffect(() => {
     const on = () => {
-      if (!area.current || !takeTextFocus()) return;
+      if (!area.current) return;
+      const typed = takeTextFocus();
+      if (typed === null) return;
       area.current.focus();
-      area.current.select();
+      if (typed) {
+        // Lo que se escribió antes de que apareciera el cuadro reemplaza el texto de la plantilla.
+        setText(o.id, (x) => ({ ...x, text: typed }));
+        requestAnimationFrame(() => area.current?.setSelectionRange(typed.length, typed.length));
+      } else area.current.select();
     };
     on();
     window.addEventListener("snip:focus-text", on);
