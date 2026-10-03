@@ -2,7 +2,7 @@ import type { Project } from "../../project/model";
 import { canvasFps } from "../../project/model";
 import { totalDuration } from "../../project/timeline";
 import { formatFps } from "../../lib/timecode";
-import { edit, gestureEnd, gestureStart } from "../../store/editor";
+import { activeTab, edit, gestureEnd, gestureStart, useEditor } from "../../store/editor";
 import { RangeSlider } from "../ui/RangeSlider";
 import { basename } from "../../lib/files";
 import { Field, Section, fmtNum } from "./Field";
@@ -12,15 +12,19 @@ import { ZoomSection } from "./video/ZoomSection";
 import { ColorSection } from "./video/ColorSection";
 import { LooksSection } from "./video/LooksSection";
 import { EnhanceSection } from "./video/EnhanceSection";
+import { ImageOverlaySection } from "./video/ImageOverlaySection";
 
 export function VideoTab({ project }: { project: Project }) {
   const total = totalDuration(project);
   const max = Math.max(0.1, Math.min(10, total / 2));
   const f = project.fades;
   const { clip, index, explicit } = useTargetClip(project);
+  const selection = useEditor((s) => activeTab(s)?.selection ?? []);
+  const imageSelected = project.overlays.some((o) => o.type === "image" && selection.includes(o.id));
   const media = clip ? project.media.find((m) => m.id === clip.mediaId) : null;
   return (
     <div className="flex flex-col gap-6" data-testid="video-tab">
+      {imageSelected && <ImageOverlaySection project={project} />}
       {clip && (
         <>
           <div className="min-w-0">
@@ -39,6 +43,7 @@ export function VideoTab({ project }: { project: Project }) {
           <EnhanceSection clip={clip} />
         </>
       )}
+      {!imageSelected && <ImageOverlaySection project={project} />}
       <Section title="Fundido a negro">
         <Field label="Al inicio" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{f.fadeIn ? `${fmtNum(f.fadeIn)} s` : "No"}</span>}>
           <RangeSlider

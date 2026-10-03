@@ -515,6 +515,41 @@ pub fn discard_raster(state: State<'_, AppState>, dir: String) {
     snip_core::raster::remove_job_dir(&state.raster_dir(), &dir);
 }
 
+const MAX_SRT: u64 = 5 * 1024 * 1024;
+
+fn is_srt(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("srt"))
+}
+
+/// Lee un .srt (UTF-8 o Latin-1).
+#[tauri::command]
+pub async fn read_subtitles(path: String) -> CmdResult<String> {
+    blocking(move || {
+        let p = Path::new(&path);
+        if !is_srt(p) {
+            return Err(AppError::with_message(ErrorKind::UnsupportedFormat, "Elegí un archivo de subtítulos .srt."));
+        }
+        let meta = std::fs::metadata(p).map_err(|e| AppError::from_io(&e))?;
+        if meta.len() > MAX_SRT {
+            return Err(AppError::with_message(ErrorKind::Unsupported, "El archivo de subtítulos es demasiado grande."));
+        }
+        let bytes = std::fs::read(p).map_err(|e| AppError::from_io(&e))?;
+        Ok(naming::decode_subtitle_text(&bytes))
+    })
+    .await
+}
+
+/// Guarda los subtítulos como .srt (UTF-8).
+#[tauri::command]
+pub async fn write_subtitles(path: String, text: String) -> CmdResult<String> {
+    blocking(move || {
+        let p = naming::ensure_extension(Path::new(&path), "srt");
+        store::write_atomic(&p, text.as_bytes())?;
+        Ok(p.to_string_lossy().into_owned())
+    })
+    .await
+}
+
 /// ¿Existen estos archivos? (para avisar de medios movidos o borrados).
 #[tauri::command]
 pub fn files_exist(paths: Vec<String>) -> Vec<bool> {

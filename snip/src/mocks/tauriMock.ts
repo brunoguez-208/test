@@ -444,6 +444,10 @@ export function installTauriMock() {
         }
         case "discard_raster":
           return null;
+        case "read_subtitles":
+          return "1\n00:00:00,500 --> 00:00:02,000\nHola, ¿qué tal?\n\n2\n00:00:02,500 --> 00:00:04,500\nEsto es una prueba\n";
+        case "write_subtitles":
+          return String(a.path);
         case "files_exist":
           return (a.paths as string[]).map((p) => !/movido/i.test(p));
         case "reveal_in_folder":

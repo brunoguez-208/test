@@ -12,20 +12,23 @@ import {
   VideoClip16Regular,
   ZoomIn16Regular,
   ZoomOut16Regular,
+  TextT16Regular,
+  ClosedCaption16Regular,
 } from "@fluentui/react-icons";
 import type { Project } from "../../project/model";
 import { moveMarker, renameMarker } from "../../project/ops";
 import { activeTab, edit, gestureEnd, gestureStart, patchProject, setSelection, useEditor } from "../../store/editor";
-import { addMusicWithDialog, addRangeFromMarks, addVideosWithDialog, player } from "../../store/controller";
+import { addMusicWithDialog, addRangeFromMarks, addTextAtPlayhead, addVideosWithDialog, player } from "../../store/controller";
 import { runShortcut } from "../../hooks/useShortcuts";
 import { freezeAt } from "../../project/ops";
 import { notifyEditError } from "../../store/controller";
 import { secondsToTimecode } from "../../lib/timecode";
 import { IconButton, Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
-import { AUDIO_H, GUTTER, MUSIC_H, PAD_X, RULER_H, VIDEO_H, geometry, rulerLabel, rulerStep, tToX, useTrackWidth, xToT, type Geo } from "./geometry";
+import { AUDIO_H, GUTTER, MUSIC_H, OVERLAY_H, PAD_X, RULER_H, VIDEO_H, geometry, rulerLabel, rulerStep, tToX, useTrackWidth, xToT, type Geo } from "./geometry";
 import { VideoTrack } from "./VideoTrack";
 import { MainAudioTrack, MusicTrack } from "./AudioTracks";
+import { OverlayTrack, SubtitleTrack, overlayLanes } from "./OverlayTracks";
 import { setScroll, zoomTimeline } from "./zoom";
 
 function Ruler({ project, geo, onScrubStart }: { project: Project; geo: Geo; onScrubStart: (e: React.PointerEvent) => void }) {
@@ -193,7 +196,9 @@ export function Timeline({ project }: { project: Project }) {
   const tab = useEditor((s) => activeTab(s));
   const time = useEditor((s) => s.time);
   const hasMusic = project.music.length > 0;
-  const tracksH = RULER_H + VIDEO_H + AUDIO_H + (hasMusic ? MUSIC_H : 0) + 8;
+  const lanes = overlayLanes(project);
+  const hasCues = project.subtitles.cues.length > 0;
+  const tracksH = RULER_H + lanes * OVERLAY_H + (hasCues ? OVERLAY_H : 0) + VIDEO_H + AUDIO_H + (hasMusic ? MUSIC_H : 0) + 8;
 
   // Mantener el playhead a la vista mientras se reproduce.
   useEffect(() => {
@@ -259,6 +264,11 @@ export function Timeline({ project }: { project: Project }) {
         <Tooltip content="Agregar música">
           <Button variant="subtle" className="!h-8 !px-2" icon={<MusicNote216Regular />} onClick={() => void addMusicWithDialog()} data-testid="add-music">
             Música
+          </Button>
+        </Tooltip>
+        <Tooltip content="Agregar texto en el playhead">
+          <Button variant="subtle" className="!h-8 !px-2" icon={<TextT16Regular />} onClick={() => addTextAtPlayhead()} data-testid="add-text">
+            Texto
           </Button>
         </Tooltip>
         <div className="mx-1 h-5 w-px bg-[var(--stroke-divider)]" />
@@ -332,6 +342,16 @@ export function Timeline({ project }: { project: Project }) {
         {/* Íconos de las pistas */}
         <div className="tl-gutter flex shrink-0 flex-col items-center" style={{ width: GUTTER }}>
           <div style={{ height: RULER_H }} />
+          {lanes > 0 && (
+            <div className="flex items-start justify-center pt-1.5 text-[var(--text-tertiary)]" style={{ height: lanes * OVERLAY_H }} title="Textos e imágenes">
+              <TextT16Regular />
+            </div>
+          )}
+          {hasCues && (
+            <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: OVERLAY_H }} title="Subtítulos">
+              <ClosedCaption16Regular />
+            </div>
+          )}
           <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: VIDEO_H }} title="Video">
             <VideoClip16Regular />
           </div>
@@ -356,6 +376,8 @@ export function Timeline({ project }: { project: Project }) {
         >
           <Ruler project={project} geo={geo} onScrubStart={scrubStart} />
           <div onPointerDown={(e) => { if (e.target === e.currentTarget) { setSelection([]); scrubStart(e); } }}>
+            {lanes > 0 && <OverlayTrack project={project} geo={geo} snapOn={snapOn} />}
+            {hasCues && <SubtitleTrack project={project} geo={geo} snapOn={snapOn} />}
             <VideoTrack project={project} geo={geo} snapOn={snapOn} />
             <MainAudioTrack project={project} geo={geo} />
             {hasMusic && <MusicTrack project={project} geo={geo} snapOn={snapOn} />}

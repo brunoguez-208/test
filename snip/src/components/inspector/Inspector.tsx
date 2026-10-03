@@ -5,11 +5,13 @@ import { ClipTab } from "./ClipTab";
 import { VideoTab } from "./VideoTab";
 import { AudioTab } from "./AudioTab";
 import { ExportTab } from "./ExportTab";
+import { TextTab } from "./TextTab";
 
 export const INSPECTOR_TABS: { id: InspectorTab; label: string }[] = [
   { id: "clip", label: "Clip" },
   { id: "video", label: "Video" },
   { id: "audio", label: "Audio" },
+  { id: "text", label: "Texto" },
   { id: "export", label: "Exportar" },
 ];
 
@@ -27,7 +29,7 @@ export function Inspector({ project }: { project: Project }) {
       transition={{ type: "spring", stiffness: 380, damping: 38 }}
       data-testid="inspector"
     >
-      <nav className="inspector-tabs flex gap-1 px-4 pb-1 pt-3" role="tablist" aria-label="Opciones">
+      <nav className="inspector-tabs flex gap-0.5 px-3 pb-1 pt-3" role="tablist" aria-label="Opciones">
         {INSPECTOR_TABS.map((t) => {
           const sel = t.id === tab;
           return (
@@ -38,7 +40,7 @@ export function Inspector({ project }: { project: Project }) {
               aria-selected={sel}
               onClick={() => useEditor.setState({ inspectorTab: t.id })}
               whileTap={{ scale: 0.96 }}
-              className={`inspector-tab t-body relative rounded-[4px] px-3 py-1.5 outline-none ${sel ? "is-selected" : ""}`}
+              className={`inspector-tab t-body relative rounded-[4px] px-2.5 py-1.5 outline-none ${sel ? "is-selected" : ""}`}
               data-testid={`inspector-tab-${t.id}`}
             >
               {t.label}
@@ -60,6 +62,7 @@ export function Inspector({ project }: { project: Project }) {
             {tab === "clip" && <div className="pb-6"><ClipTab project={project} /></div>}
             {tab === "video" && <div className="pb-6"><VideoTab project={project} /></div>}
             {tab === "audio" && <div className="pb-6"><AudioTab project={project} /></div>}
+            {tab === "text" && <div className="pb-6"><TextTab project={project} /></div>}
             {tab === "export" && <ExportTab project={project} />}
           </motion.div>
         </AnimatePresence>

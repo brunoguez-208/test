@@ -60,6 +60,8 @@ export const api = {
   writeRasterFiles: (id: string, files: { name: string; data: string }[]) => invoke<string>("write_raster_files", { id, files }),
   writeRasterList: (id: string, name: string, text: string) => invoke<string>("write_raster_list", { id, name, text }),
   discardRaster: (dir: string) => invoke<void>("discard_raster", { dir }),
+  readSubtitles: (path: string) => invoke<string>("read_subtitles", { path }),
+  writeSubtitles: (path: string, text: string) => invoke<string>("write_subtitles", { path, text }),
   filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
   revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
   openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
@@ -121,6 +123,7 @@ export const VIDEO_FILTER = { name: "Video", extensions: ["mp4", "mov", "mkv", "
 export const PROJECT_FILTER = { name: "Proyecto de Snip", extensions: ["snip"] };
 export const AUDIO_FILTER = { name: "Audio", extensions: ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "mp4", "mov", "mkv", "webm"] };
 export const IMAGE_FILTER = { name: "Imagen", extensions: ["png", "jpg", "jpeg", "webp"] };
+export const SRT_FILTER = { name: "Subtítulos", extensions: ["srt"] };
 
 export async function pickFiles(title: string, filters: { name: string; extensions: string[] }[], multiple = false): Promise<string[]> {
   const r = await openDialog({ title, multiple, directory: false, filters });

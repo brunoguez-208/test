@@ -12,6 +12,7 @@ import { ProgressRing } from "../ui/Progress";
 import { Tooltip } from "../ui/Tooltip";
 import { clipGeometry } from "../../project/geometry";
 import { CropEditor, ZoomEditor } from "./ImageEditors";
+import { OverlayEditor, selectOverlayAt } from "./OverlayEditor";
 
 /** Preview: canvas WebGL encajado con la proporción del lienzo. */
 export function Preview({ project }: { project: Project }) {
@@ -25,6 +26,10 @@ export function Preview({ project }: { project: Project }) {
   const proxies = useEditor((s) => s.proxies);
   const [glFailed, setGlFailed] = useState(false);
   const imageEdit = useEditor((s) => s.imageEdit);
+  const overlaySelected = useEditor((s) => {
+    const sel = activeTab(s)?.selection ?? [];
+    return project.overlays.some((o) => sel.includes(o.id));
+  });
   const editClip = imageEdit ? project.clips.find((c) => c.id === imageEdit.clipId) ?? null : null;
   const editMedia = editClip ? project.media.find((m) => m.id === editClip.mediaId) ?? null : null;
   // Recortando: el preview muestra el cuadro completo del clip (con su proporción).
@@ -75,7 +80,17 @@ export function Preview({ project }: { project: Project }) {
   return (
     <div ref={box} className="relative flex min-h-0 flex-1 items-center justify-center" data-testid="player">
       <div className="video-well group relative overflow-hidden rounded-[8px]" style={{ width: size.w, height: size.h }}>
-        <canvas ref={canvas} className="absolute inset-0 h-full w-full" onClick={() => !imageEdit && player().toggle()} data-testid="preview-canvas" />
+        <canvas
+          ref={canvas}
+          className="absolute inset-0 h-full w-full"
+          onClick={(e) => {
+            if (imageEdit) return;
+            // Click sobre un texto o logo: lo selecciona (si no, play/pausa).
+            if (!selectOverlayAt(project, e, e.currentTarget.parentElement!)) player().toggle();
+          }}
+          data-testid="preview-canvas"
+        />
+        {!imageEdit && <OverlayEditor project={project} />}
         {cropping && <CropEditor clip={editClip} media={editMedia} />}
         {imageEdit?.mode === "zoom" && editClip && <ZoomEditor clip={editClip} keyId={imageEdit.keyId} />}
 
@@ -155,11 +170,13 @@ export function Preview({ project }: { project: Project }) {
           </AnimatePresence>
         </div>
 
-        {!playing && !empty && !isMissing && !imageEdit && (
+        {!playing && !empty && !isMissing && !imageEdit && !overlaySelected && (
           <motion.button
             type="button"
             aria-label="Reproducir"
-            onClick={() => player().toggle()}
+            onClick={(e) => {
+              if (!selectOverlayAt(project, e, e.currentTarget.parentElement!)) player().toggle();
+            }}
             className="big-play absolute left-1/2 top-1/2 -ml-8 -mt-8 flex h-16 w-16 items-center justify-center rounded-full opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-visible:opacity-100"
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.95 }}

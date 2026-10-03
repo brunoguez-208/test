@@ -192,3 +192,36 @@ mod tests {
         assert_eq!(sanitize_file_name("  ..  "), "video");
     }
 }
+
+/// Texto de un archivo de subtítulos: UTF-8 (con o sin BOM) o, si no lo es,
+/// Windows-1252/Latin-1 (muy común en .srt en castellano).
+pub fn decode_subtitle_text(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.trim_start_matches('\u{feff}').to_string(),
+        Err(_) => bytes
+            .iter()
+            .map(|&b| match b {
+                0x80 => '€',
+                0x91 => '‘',
+                0x92 => '’',
+                0x93 => '“',
+                0x94 => '”',
+                0x96 => '–',
+                0x97 => '—',
+                0x85 => '…',
+                _ => b as char,
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod subtitle_text_tests {
+    use super::decode_subtitle_text;
+
+    #[test]
+    fn utf8_and_latin1() {
+        assert_eq!(decode_subtitle_text("\u{feff}¿Qué?".as_bytes()), "¿Qué?");
+        assert_eq!(decode_subtitle_text(&[0xBF, b'Q', b'u', 0xE9, b'?', 0x85]), "¿Qué?…");
+    }
+}

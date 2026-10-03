@@ -2,7 +2,9 @@
 
 import {
   AUDIO_FILTER,
+  IMAGE_FILTER,
   PROJECT_FILTER,
+  SRT_FILTER,
   VIDEO_FILTER,
   api,
   events,
@@ -14,6 +16,8 @@ import {
 import { basename, dirname, isAudio, isProjectFile, isVideo, stem } from "../lib/files";
 import { toAppError, type AppError, type ExportJob, type QueueItem, type RasterSpec } from "../lib/types";
 import { decorSignature, hasDecor, renderDecorSequence, type DecorSequence } from "../engine/raster";
+import { addImage, addText, setCues } from "../project/overlayOps";
+import { formatSrt, parseSrt } from "../project/srt";
 import type { Clip, ExportSettings, MediaRef, Project } from "../project/model";
 import { canvasFps, canvasFpsExpr } from "../project/model";
 import { EditError, addMusic as addMusicOp, addRange, fitCanvas, insertMedia, makeId, newProject } from "../project/ops";
@@ -37,6 +41,7 @@ import {
   patchProject,
   pushToast,
   setMissing,
+  setSelection,
   useEditor,
   type ImageEdit,
   type ProcState,
@@ -594,6 +599,109 @@ export function buildJob(p: Project, opts: { settings?: ExportSettings; window?:
 }
 
 /** Manda el proyecto (o un rango) a la cola de exportación. */
+// ------------------------------- Textos -------------------------------
+
+/** Texto nuevo (plantilla) en el playhead: queda seleccionado y con la pestaña Texto abierta. */
+export function addTextAtPlayhead(template = "title") {
+  const p = activeProject();
+  if (!p || !p.clips.length) {
+    pushToast({ severity: "caution", title: "Agregá un video antes de sumar textos" });
+    return;
+  }
+  let id = "";
+  edit((q) => {
+    const [r, newId] = addText(q, template, useEditor.getState().time);
+    id = newId;
+    return r;
+  });
+  setSelection([id]);
+  useEditor.setState({ inspectorTab: "text", inspectorOpen: true });
+  requestTextFocus();
+}
+
+/** Pide el foco en el cuadro de texto (si el editor todavía no se montó, lo toma al montarse). */
+let pendingTextFocus = false;
+export function requestTextFocus() {
+  pendingTextFocus = true;
+  window.dispatchEvent(new CustomEvent("snip:focus-text"));
+}
+export function takeTextFocus(): boolean {
+  const v = pendingTextFocus;
+  pendingTextFocus = false;
+  return v;
+}
+
+/** Logo o marca de agua: arriba a la derecha, durante todo el video. */
+export async function addLogoWithDialog() {
+  const p = activeProject();
+  if (!p || !p.clips.length) {
+    pushToast({ severity: "caution", title: "Agregá un video antes de sumar un logo" });
+    return;
+  }
+  const [path] = await pickFiles("Elegí una imagen (PNG con transparencia queda mejor)", [IMAGE_FILTER]);
+  if (!path) return;
+  try {
+    const m = await probe(path);
+    if (m.kind !== "image") throw new EditError("Elegí una imagen PNG, JPG o WebP.");
+    let id = "";
+    edit((q) => {
+      const [r, newId] = addImage(q, m);
+      id = newId;
+      return r;
+    });
+    setSelection([id]);
+    useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+  } catch (e) {
+    notifyError("No se pudo agregar la imagen", e);
+  }
+}
+
+// ------------------------------- Subtítulos -------------------------------
+
+export async function importSrtWithDialog() {
+  const p = activeProject();
+  if (!p) return;
+  const [path] = await pickFiles("Importar subtítulos", [SRT_FILTER]);
+  if (!path) return;
+  try {
+    const cues = parseSrt(await api.readSubtitles(path), () => makeId("s"));
+    if (!cues.length) {
+      pushToast({ severity: "caution", title: "No encontramos subtítulos en ese archivo", message: "Revisá que sea un .srt con tiempos del tipo 00:00:01,000 --> 00:00:02,000." });
+      return;
+    }
+    let replace = true;
+    if (p.subtitles.cues.length) {
+      const r = await ask({
+        title: "¿Reemplazar los subtítulos?",
+        body: `El proyecto ya tiene ${p.subtitles.cues.length} subtítulos. Podés reemplazarlos o sumar los del archivo.`,
+        primary: "Reemplazar",
+        secondary: "Sumar",
+      });
+      if (r === "cancel") return;
+      replace = r === "primary";
+    }
+    edit((q) => setCues(q, replace ? cues : [...q.subtitles.cues, ...cues]));
+    pushToast({ severity: "success", title: `${cues.length} subtítulos importados` });
+  } catch (e) {
+    notifyError("No se pudieron importar los subtítulos", e);
+  }
+}
+
+export async function exportSrt() {
+  const p = activeProject();
+  if (!p || !p.subtitles.cues.length) return;
+  const first = p.media.find((m) => m.kind === "video");
+  const def = first ? `${dirname(first.path)}\\${stem(first.path)}.srt` : `${p.name || "subtitulos"}.srt`;
+  const path = await pickSavePath("Guardar subtítulos", def, [SRT_FILTER]);
+  if (!path) return;
+  try {
+    const out = await api.writeSubtitles(path, formatSrt(p.subtitles.cues));
+    pushToast({ severity: "success", title: "Subtítulos guardados", message: basename(out) });
+  } catch (e) {
+    notifyError("No se pudieron guardar los subtítulos", e);
+  }
+}
+
 // ---- Capas rasterizadas (textos, subtítulos, logos) para la exportación ----
 
 let decorCache: { sig: string; seq: DecorSequence } | null = null;

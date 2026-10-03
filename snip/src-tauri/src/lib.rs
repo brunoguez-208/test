@@ -177,6 +177,8 @@ pub fn run() {
             commands::write_raster_files,
             commands::write_raster_list,
             commands::discard_raster,
+            commands::read_subtitles,
+            commands::write_subtitles,
             commands::files_exist,
             commands::reveal_in_folder,
             commands::open_in_default_app,
