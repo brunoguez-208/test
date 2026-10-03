@@ -15,7 +15,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: /perf\.spec\.ts/,
+      testIgnore: /(perf|parity)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 820 },
@@ -28,10 +28,24 @@ export default defineConfig({
       },
     },
     {
+      // Paridad preview ↔ exportación con FFmpeg real.
+      name: "paridad",
+      testMatch: /parity\.spec\.ts/,
+      timeout: 600_000,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 820 },
+        launchOptions: {
+          ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
+          args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required"],
+        },
+      },
+    },
+    {
       // Rendimiento: después de todo lo demás, sin otros tests en paralelo.
       name: "rendimiento",
       testMatch: /perf\.spec\.ts/,
-      dependencies: ["chromium"],
+      dependencies: ["chromium", "paridad"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 820 },

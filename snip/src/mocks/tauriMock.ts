@@ -7,6 +7,7 @@ import limits from "../../src-tauri/core/config/platform_limits.json";
 import type { AppError, ExportJob, ProjectOutcome, ProjectSummary, QueueItem, RecentFile } from "../lib/types";
 import type { MediaRef, Project } from "../project/model";
 import { totalDuration } from "../project/timeline";
+import { installParity } from "./parity";
 
 const params = new URLSearchParams(location.search);
 
@@ -153,6 +154,7 @@ function hash(s: string) {
 
 export function installTauriMock() {
   mockWindows("main");
+  installParity();
   const calls: { cmd: string; args: unknown }[] = [];
   const now = Date.now();
   const state: MockState = {
