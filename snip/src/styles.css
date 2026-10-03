@@ -778,3 +778,6 @@ kbd.kbd {
 /* ------------------------------ Cola ------------------------------ */
 .queue-row { background: var(--card-fill); border: 1px solid var(--stroke-card); }
 .queue-dot { background: var(--text-tertiary); }
+.goto-tc { background: transparent; color: var(--text-primary); border: 1px solid transparent; transition: background-color 83ms linear; }
+.goto-tc:hover { background: var(--control-fill); }
+.goto-tc:focus { background: var(--control-fill-input-active); border-bottom: 2px solid var(--accent-fill); }

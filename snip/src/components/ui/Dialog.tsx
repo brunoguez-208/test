@@ -5,6 +5,8 @@ import { Button } from "./Button";
 
 interface DialogProps {
   open: boolean;
+  /** Identidad del diálogo: uno nuevo nunca reutiliza al que se está cerrando. */
+  dialogKey?: string | number;
   title: string;
   children: ReactNode;
   primary: string;
@@ -20,7 +22,7 @@ interface DialogProps {
 }
 
 /** ContentDialog de WinUI: smoke + tarjeta que entra con escala sutil. */
-export function Dialog({ open, title, children, primary, secondary = "Cancelar", tertiary, danger, onPrimary, onSecondary, onTertiary, onClose }: DialogProps) {
+export function Dialog({ open, dialogKey = "dialog", title, children, primary, secondary = "Cancelar", tertiary, danger, onPrimary, onSecondary, onTertiary, onClose }: DialogProps) {
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export function Dialog({ open, title, children, primary, secondary = "Cancelar",
     <AnimatePresence>
       {open && (
         <motion.div
-          key="dialog"
+          key={dialogKey}
           className="fixed inset-0 z-[80] flex items-center justify-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

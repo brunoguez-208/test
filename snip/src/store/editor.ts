@@ -4,6 +4,7 @@
 // Rust) viven en ./controller.ts.
 
 import { create } from "zustand";
+import { useEffect, useState } from "react";
 import type { Project } from "../project/model";
 import { beginGesture, cancelGesture, commit, createHistory, endGesture, redo, replace, sameEdit, undo, type History } from "../project/history";
 import type { AppError, EncoderInfo, PlatformLimits, ProjectSummary, QueueItem, RecentFile } from "../lib/types";
@@ -36,6 +37,8 @@ export interface Tab {
 }
 
 export interface Confirm {
+  /** Cada pedido tiene su id: si uno abre mientras el anterior se cierra, no se mezclan. */
+  id: number;
   title: string;
   body: string;
   primary: string;
@@ -147,6 +150,29 @@ export function activeProject(s: EditorState = useEditor.getState()): Project | 
 
 export function useProject(): Project | null {
   return useEditor((s) => activeTab(s)?.history.present ?? null);
+}
+
+/**
+ * El proyecto activo, pero solo re-renderiza cuando cambia algo que no sea la
+ * vista (zoom/scroll del timeline): para el preview, el transporte y el inspector.
+ */
+export function useProjectSansView(): Project | null {
+  const [p, setP] = useState(() => activeProject());
+  useEffect(() => {
+    let last = activeProject();
+    let sig = last ? JSON.stringify({ ...last, view: null }) : "";
+    setP(last);
+    return useEditor.subscribe((s) => {
+      const next = activeTab(s)?.history.present ?? null;
+      if (next === last) return;
+      const nsig = next ? JSON.stringify({ ...next, view: null }) : "";
+      last = next;
+      if (nsig === sig) return;
+      sig = nsig;
+      setP(next);
+    });
+  }, []);
+  return p;
 }
 
 export function useTab(): Tab | null {
@@ -274,12 +300,15 @@ export function dismissToast(id: number) {
   useEditor.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
 }
 
+let confirmSeq = 1;
+
 /** Diálogo de confirmación como promesa. */
-export function ask(c: Omit<Confirm, "resolve">): Promise<"primary" | "secondary" | "tertiary" | "cancel"> {
+export function ask(c: Omit<Confirm, "resolve" | "id">): Promise<"primary" | "secondary" | "tertiary" | "cancel"> {
   return new Promise((resolve) => {
     useEditor.setState({
       confirm: {
         ...c,
+        id: confirmSeq++,
         resolve: (choice) => {
           useEditor.setState({ confirm: null });
           resolve(choice);

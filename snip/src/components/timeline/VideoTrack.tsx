@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   ArrowRepeatAll16Regular,
   ArrowSync16Regular,
@@ -28,6 +29,8 @@ function thumbStep(secondsPerTile: number): number {
 
 interface ClipViewProps {
   clip: Clip;
+  /** Cambia solo cuando cambia el orden de los clips: ahí (y solo ahí) se anima el reacomodo. */
+  order: string;
   media: MediaRef | undefined;
   span: Span;
   geo: Geo;
@@ -39,9 +42,8 @@ interface ClipViewProps {
   onTrimDown: (edge: "in" | "out") => (e: React.PointerEvent) => void;
 }
 
-const ClipView = memo(function ClipView({ clip, media, span, geo, selected, dragging, dragX, missing, onBodyDown, onTrimDown }: ClipViewProps) {
+const ClipView = memo(function ClipView({ clip, order, media, span, geo, selected, dragging, dragX, missing, onBodyDown, onTrimDown }: ClipViewProps) {
   const reduce = useReducedMotion();
-  const thumbs = useEditor((s) => s.thumbs);
   const heavy = useEditor((s) => s.heavy[clip.id]);
   const x = tToX(geo, span.start);
   const w = Math.max(6, span.duration * geo.pps);
@@ -64,6 +66,8 @@ const ClipView = memo(function ClipView({ clip, media, span, geo, selected, drag
     }
   }
   const tileKeys = tiles.map((t) => t.key).join(",");
+  // Solo las miniaturas de este clip (no re-renderiza cuando llegan las de otros).
+  const thumbs = useEditor(useShallow((s) => tiles.map((t) => s.thumbs[t.key] ?? null)));
   useEffect(() => {
     if (!media || missing) return;
     requestThumbs(tiles.map((t) => ({ path: media.path, time: t.time })), 96);
@@ -82,6 +86,7 @@ const ClipView = memo(function ClipView({ clip, media, span, geo, selected, drag
   return (
     <motion.div
       layout={!dragging && !reduce ? "position" : false}
+      layoutDependency={order}
       transition={{ type: "spring", stiffness: 520, damping: 42 }}
       className={`tl-clip absolute top-0 ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${missing ? "is-missing" : ""}`}
       style={{ left: x + (dragging ? dragX : 0), width: w, height: VIDEO_H, zIndex: dragging ? 20 : selected ? 5 : 1 }}
@@ -93,10 +98,10 @@ const ClipView = memo(function ClipView({ clip, media, span, geo, selected, drag
       aria-label={`${media ? basename(media.path) : "Clip"}${selected ? " (seleccionado)" : ""}`}
     >
       <div className="tl-clip-thumbs absolute inset-0 overflow-hidden rounded-[6px]">
-        {tiles.map((t) => (
+        {tiles.map((t, ti) => (
           <div key={t.i} className="absolute top-0 h-full" style={{ left: t.i * tileW, width: tileW }}>
-            {thumbs[t.key] ? (
-              <img src={thumbs[t.key]} alt="" draggable={false} className="tl-thumb h-full w-full object-cover" data-testid="thumb" />
+            {thumbs[ti] ? (
+              <img src={thumbs[ti]!} alt="" draggable={false} className="tl-thumb h-full w-full object-cover" data-testid="thumb" />
             ) : (
               <div className="skeleton h-full w-full" data-testid="thumb-skeleton" />
             )}
@@ -164,6 +169,7 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
   const selection = tab?.selection ?? [];
   const missing = tab?.missing ?? [];
   const spans = useMemo(() => layout(project.clips), [project.clips]);
+  const order = project.clips.map((c) => c.id).join(",");
   // Arrastre de un clip: dx del puntero y dónde empezaba (para que siga al puntero aunque se reordene).
   const [drag, setDrag] = useState<{ id: string; dx: number; s0: number } | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -219,6 +225,7 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
           <ClipView
             key={c.id}
             clip={c}
+            order={order}
             media={m}
             span={spans[i]}
             geo={geo}

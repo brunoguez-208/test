@@ -1,6 +1,6 @@
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect } from "react";
-import { activeTab, useEditor, useProject } from "../../store/editor";
+import { activeTab, useEditor, useProject, useProjectSansView } from "../../store/editor";
 import { player } from "../../store/controller";
 import { totalDuration } from "../../project/timeline";
 import { Preview } from "./Preview";
@@ -14,9 +14,16 @@ const rise = (delay: number) => ({
   transition: { duration: 0.45, ease: [0.1, 0.9, 0.2, 1] as const, delay },
 });
 
+/** El timeline sí escucha el proyecto entero (incluida la vista). */
+function TimelineLive() {
+  const p = useProject();
+  return p ? <Timeline project={p} /> : null;
+}
+
 /** Editor: preview grande, timeline abajo e inspector a la derecha. */
 export function Editor() {
-  const project = useProject();
+  // El editor no escucha el zoom/scroll del timeline (solo el timeline lo hace).
+  const project = useProjectSansView();
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
   const loop = useEditor((s) => s.loop);
   const markIn = useEditor((s) => activeTab(s)?.markIn ?? null);
@@ -46,7 +53,7 @@ export function Editor() {
             <Transport project={project} />
           </motion.div>
           <motion.div layout="position" {...rise(0.14)}>
-            <Timeline project={project} />
+            <TimelineLive />
           </motion.div>
         </motion.div>
         <AnimatePresence initial={true}>{inspectorOpen && <Inspector project={project} />}</AnimatePresence>

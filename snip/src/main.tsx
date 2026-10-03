@@ -18,7 +18,8 @@ async function boot() {
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
       const ctrl = e.ctrlKey || e.metaKey;
-      if (k === "f5" || k === "f7" || (ctrl && ["r", "p", "f", "g", "u", "j", "s"].includes(k)) || (ctrl && e.shiftKey && ["i", "c"].includes(k))) {
+      // Atajos del navegador que no tienen sentido en la app (Ctrl+S, Ctrl+W, Ctrl+Tab los maneja Snip).
+      if (k === "f5" || k === "f7" || (ctrl && ["r", "p", "f", "g", "u", "j"].includes(k)) || (ctrl && e.shiftKey && ["i", "c"].includes(k))) {
         e.preventDefault();
       }
     }, true);

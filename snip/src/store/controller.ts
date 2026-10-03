@@ -455,36 +455,58 @@ export function quantizeThumbTime(t: number, step: number) {
 
 let thumbGeneration = 0;
 let thumbsListening: Promise<() => void> | null = null;
-let pendingThumbs: { path: string; time: number; key: string }[] = [];
+/** Lo que se pidió en este tick y lo que todavía no llegó (se reenvía con cada pedido nuevo). */
+const thumbWanted = new Map<string, { path: string; time: number; height: number }>();
+let thumbSent: { key: string; path: string; time: number }[] = [];
+let thumbFlush = 0;
+let thumbInbox: Record<string, string> = {};
+let thumbRaf = 0;
 
-/** Pide las miniaturas que faltan (las que ya están, quedan en caché). */
+/** Pide las miniaturas que faltan. Los pedidos del mismo tick se agrupan en uno solo. */
 export function requestThumbs(items: { path: string; time: number }[], height: number) {
   const have = useEditor.getState().thumbs;
-  const seen = new Set<string>();
-  const missing: { path: string; time: number; key: string }[] = [];
   for (const it of items) {
     const key = thumbKey(it.path, it.time, height);
-    if (have[key] || seen.has(key)) continue;
-    seen.add(key);
-    missing.push({ ...it, key });
+    if (!have[key]) thumbWanted.set(key, { ...it, height });
   }
-  if (!missing.length) return;
-  const same = missing.length === pendingThumbs.length && missing.every((m, i) => m.key === pendingThumbs[i].key);
+  if (!thumbFlush) thumbFlush = window.setTimeout(flushThumbs, 0);
+}
+
+function flushThumbs() {
+  thumbFlush = 0;
+  const have = useEditor.getState().thumbs;
+  // Lo pendiente del pedido anterior que todavía no llegó, más lo nuevo (lo nuevo primero).
+  const batch = new Map<string, { path: string; time: number; height: number }>();
+  for (const [k, v] of thumbWanted) if (!have[k]) batch.set(k, v);
+  for (const it of thumbSent) if (!have[it.key] && !batch.has(it.key)) batch.set(it.key, { path: it.path, time: it.time, height: 96 });
+  thumbWanted.clear();
+  if (!batch.size) return;
+  const list = [...batch.entries()].slice(0, 300).map(([key, v]) => ({ key, path: v.path, time: v.time }));
+  const same = list.length === thumbSent.length && list.every((m, i) => m.key === thumbSent[i].key);
   if (same) return;
-  pendingThumbs = missing;
+  thumbSent = list;
   thumbGeneration += 1;
   const gen = thumbGeneration;
   if (!thumbsListening) {
     thumbsListening = events.onThumbnail((t) => {
       if (t.group !== "timeline" || t.generation !== thumbGeneration) return;
-      const it = pendingThumbs[t.index];
+      const it = thumbSent[t.index];
       if (!it) return;
-      useEditor.setState((s) => ({ thumbs: { ...s.thumbs, [it.key]: t.dataUrl } }));
-      const p = activeProject();
-      if (p) maybeSaveThumbnail(p);
+      // Las que llegan juntas se aplican en un solo update por cuadro.
+      thumbInbox[it.key] = t.dataUrl;
+      if (!thumbRaf) {
+        thumbRaf = requestAnimationFrame(() => {
+          thumbRaf = 0;
+          const add = thumbInbox;
+          thumbInbox = {};
+          useEditor.setState((s) => ({ thumbs: { ...s.thumbs, ...add } }));
+          const p = activeProject();
+          if (p) maybeSaveThumbnail(p);
+        });
+      }
     });
   }
-  void thumbsListening.then(() => api.requestThumbnails("timeline", gen, missing.map(({ path, time }) => ({ path, time })), height).catch(() => {}));
+  void thumbsListening.then(() => api.requestThumbnails("timeline", gen, list.map(({ path, time }) => ({ path, time })), 96).catch(() => {}));
 }
 
 // ------------------------------- Proxies (HEVC) -------------------------------
@@ -576,7 +598,12 @@ export async function enqueueExport(opts: { window?: { start: number; end: numbe
   const title = opts.label ? `${p.name || "Proyecto"} · ${opts.label}` : p.name || "Proyecto";
   try {
     await api.enqueueExport(buildJob(p, opts), title);
-    useEditor.setState({ queueOpen: true });
+    pushToast({
+      severity: "info",
+      title: "Exportando en segundo plano",
+      message: "Podés seguir editando. La cola está arriba a la derecha.",
+      action: { label: "Ver cola", run: () => useEditor.setState({ queueOpen: true }) },
+    });
   } catch (e) {
     notifyError("No se pudo exportar", e);
   }
@@ -615,7 +642,7 @@ export async function extractAudio() {
   const settings: ExportSettings = { ...p.export, format: "mp3", sizeTarget: null, mode: "precise" };
   try {
     await api.enqueueExport({ ...buildJob(p, { settings }), saveProject: false }, `${p.name || "Proyecto"} · audio`);
-    useEditor.setState({ queueOpen: true });
+    pushToast({ severity: "info", title: "Extrayendo el audio", action: { label: "Ver cola", run: () => useEditor.setState({ queueOpen: true }) } });
   } catch (e) {
     notifyError("No se pudo extraer el audio", e);
   }
@@ -733,11 +760,12 @@ export function startSync() {
         patchProject(() => fitted);
         return;
       }
-      if (!prev || editSignature(prev) !== editSignature(p) || prev.view !== p.view) {
+      if (!prev || editSignature(prev) !== editSignature(p)) {
         player().setProject(p);
-        scheduleAutosave(p.id);
         scheduleHeavy();
       }
+      // La vista (zoom, scroll) solo se autoguarda: no cambia el preview.
+      scheduleAutosave(p.id);
     }
   });
 }

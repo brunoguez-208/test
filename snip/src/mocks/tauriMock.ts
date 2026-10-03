@@ -47,27 +47,29 @@ function mediaFor(path: string, id: string): MediaRef {
   };
 }
 
-/** Miniatura sintética: una "escena" con degradé distinto según el tiempo. */
+const thumbCache = new Map<number, string>();
+/** Miniatura sintética: una "escena" con degradé distinto según el tiempo (cacheada). */
 function fakeThumb(seed: number): string {
-  const c = document.createElement("canvas");
-  c.width = 160;
-  c.height = 90;
-  const g = c.getContext("2d")!;
+  const k = ((seed % 24) + 24) % 24;
+  const hit = thumbCache.get(k);
+  if (hit) return hit;
+  const url = drawThumb(k);
+  thumbCache.set(k, url);
+  return url;
+}
+
+/** SVG en vez de canvas → JPEG: armar un string es instantáneo (codificar en SwiftShader tarda decenas de ms). */
+function drawThumb(seed: number): string {
   const hue = (200 + seed * 37) % 360;
-  const grad = g.createLinearGradient(0, 0, 160, 90);
-  grad.addColorStop(0, `hsl(${hue} 80% 70%)`);
-  grad.addColorStop(1, `hsl(${(hue + 50) % 360} 70% 35%)`);
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 160, 90);
-  g.fillStyle = "rgba(0,0,0,0.22)";
-  g.beginPath();
-  g.ellipse(80, 95, 70, 34, 0, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = "rgba(255,255,255,0.6)";
-  g.beginPath();
-  g.arc(118, 24, 10, 0, Math.PI * 2);
-  g.fill();
-  return c.toDataURL("image/jpeg", 0.8);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="hsl(${hue},80%,70%)"/><stop offset="1" stop-color="hsl(${(hue + 50) % 360},70%,35%)"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="160" height="90" fill="url(#g)"/>` +
+    `<ellipse cx="80" cy="95" rx="70" ry="34" fill="rgba(0,0,0,0.22)"/>` +
+    `<circle cx="118" cy="24" r="10" fill="rgba(255,255,255,0.6)"/></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function fakePeaks(seconds: number): string {
@@ -202,7 +204,7 @@ export function installTauriMock() {
     dark3: "#003A6A",
   });
 
-  const emitQueue = () => void emit("queue-updated", { items: state.queue });
+  const emitQueue = () => void emit("queue-updated", { items: structuredClone(state.queue) });
   let nextId = 1;
   let running = false;
   const pump = () => {
@@ -258,6 +260,9 @@ export function installTauriMock() {
     };
     window.setTimeout(tick, 60);
   };
+
+  // La cola arranca sola cuando se libera (holdQueue = false).
+  window.setInterval(pump, 100);
 
   mockIPC(
     async (cmd, args) => {
@@ -339,7 +344,7 @@ export function installTauriMock() {
           return id;
         }
         case "export_queue":
-          return state.queue;
+          return structuredClone(state.queue);
         case "cancel_export_item": {
           const it = state.queue.find((q) => q.id === Number(a.id));
           if (it && (it.status.state === "queued" || it.status.state === "running")) it.status = { state: "cancelled" };

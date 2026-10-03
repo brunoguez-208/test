@@ -42,23 +42,31 @@ function sourceAt(c: Clip, u: number): number {
   return fwd ? c.inPoint + off : c.outPoint - off;
 }
 
+const MAX_CANVAS = 4096;
+
+/** Parte del clip a dibujar: el clip entero si entra en un canvas (no se redibuja al scrollear), o solo lo visible. */
+function waveWindow(x: number, w: number, viewW: number): [number, number] {
+  if (w <= MAX_CANVAS) return [0, w];
+  return [Math.max(0, -x), Math.min(w, viewW - x)];
+}
+
 function ClipWave({ clip, media, start, duration, geo }: { clip: Clip; media: MediaRef | undefined; start: number; duration: number; geo: Geo }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const peaks = useEditor((s) => (media ? s.waveforms[media.path] : undefined));
   const x = tToX(geo, start);
   const w = duration * geo.pps;
-  // Solo la parte visible.
-  const vx0 = Math.max(0, -x);
-  const vx1 = Math.min(w, geo.width - x);
+  const [vx0, vx1] = waveWindow(x, w, geo.width);
   const silent = !media?.hasAudio || clip.audio.removed || clip.audio.muted || clip.kind === "freeze";
+  const visible = x + w > 0 && x < geo.width;
   useEffect(() => {
-    if (!ref.current || vx1 <= vx0) return;
+    if (!ref.current || vx1 <= vx0 || !visible) return;
     drawWave(ref.current, silent ? undefined : peaks, vx1 - vx0, AUDIO_H - 6, (px) => {
       const u = (vx0 + px) / geo.pps;
       return u > duration ? null : sourceAt(clip, u);
     }, clip.audio.volume);
-  }, [peaks, vx0, vx1, geo.pps, clip, duration, silent]);
-  if (vx1 <= vx0) return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peaks, w > MAX_CANVAS ? vx0 : 0, w > MAX_CANVAS ? vx1 : w, geo.pps, clip, duration, silent, visible]);
+  if (!visible) return null;
   return (
     <div className={`tl-audio-clip absolute top-[3px] overflow-hidden rounded-[4px] ${silent ? "is-silent" : ""}`} style={{ left: x, width: w, height: AUDIO_H - 6 }} data-testid="audio-clip">
       <canvas ref={ref} className="tl-wave absolute top-0" style={{ left: vx0, width: vx1 - vx0, height: AUDIO_H - 6 }} />
@@ -84,12 +92,12 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
   const len = mu.outPoint - mu.inPoint;
   const x = tToX(geo, mu.start);
   const w = Math.max(6, len * geo.pps);
-  const vx0 = Math.max(0, -x);
-  const vx1 = Math.min(w, geo.width - x);
+  const [vx0, vx1] = waveWindow(x, w, geo.width);
   useEffect(() => {
     if (!ref.current || vx1 <= vx0) return;
     drawWave(ref.current, peaks, vx1 - vx0, MUSIC_H - 6, (px) => mu.inPoint + (vx0 + px) / geo.pps, mu.volume);
-  }, [peaks, vx0, vx1, geo.pps, mu.inPoint, mu.volume]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peaks, w > MAX_CANVAS ? vx0 : 0, w > MAX_CANVAS ? vx1 : w, geo.pps, mu.inPoint, mu.volume]);
 
   const startDrag = (mode: "move" | "in" | "out") => (e: React.PointerEvent) => {
     if (e.button !== 0) return;

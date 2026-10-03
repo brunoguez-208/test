@@ -7,6 +7,7 @@ export function ConfirmDialog() {
   return (
     <Dialog
       open={!!c}
+      dialogKey={c?.id}
       title={c?.title ?? ""}
       primary={c?.primary ?? "Aceptar"}
       secondary={c?.secondary ?? "Cancelar"}

@@ -17,6 +17,7 @@ import { secondsToTimecode } from "../lib/timecode";
 import { canvasFps, type Project } from "../project/model";
 import { totalDuration } from "../project/timeline";
 import { IconButton } from "./ui/Button";
+import { GoToTime } from "./GoToTime";
 import { Tooltip } from "./ui/Tooltip";
 import { Slider } from "./ui/Slider";
 
@@ -62,9 +63,7 @@ export function Transport({ project }: { project: Project }) {
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-1" data-testid="transport">
       <div className="t-body tabular flex items-baseline gap-1.5">
-        <span className="text-[var(--text-primary)]" data-testid="current-tc">
-          {secondsToTimecode(time, fps)}
-        </span>
+        <GoToTime value={time} fps={fps} onSeek={(t) => player().seek(t)} />
         <span className="text-[var(--text-tertiary)]" data-testid="total-tc">/ {secondsToTimecode(total, fps)}</span>
       </div>
 
