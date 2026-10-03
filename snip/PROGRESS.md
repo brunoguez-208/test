@@ -10,8 +10,8 @@ se corta, se retoma desde acá.
       (Rust 19 integración + unit, Vitest 42, Playwright 18).
 - [x] **Tanda 1** — base del editor (instalador generado)
 - [x] **Tanda 2** — imagen, texto y efectos (instalador final generado)
-- [ ] **Actualización 2.1 — tanda A** (grabaciones NVIDIA, ventana, portapapeles, imagen,
-      audio, pistas, proyecto/versiones/plantillas) — en curso
+- [x] **Actualización 2.1 — tanda A** (grabaciones NVIDIA, ventana, portapapeles, imagen,
+      audio, pistas, proyecto/versiones/plantillas) — instalador `Snip_2.1.0-tandaA_x64-setup.exe`
 - [ ] **Actualización 2.1 — tanda B** (biblioteca, visor de origen, rampas, chroma, presets,
       máscaras, herramientas automáticas, sonidos)
 
@@ -177,7 +177,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
 - [x] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
 - [x] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
-- [ ] Cierre: tests completos + instalador de la tanda A
+- [x] Cierre: tests completos + instalador de la tanda A
 
 ### Notas de A1 (grabaciones de NVIDIA)
 - Causa: ShadowPlay graba VFR; el promedio sale como fracciones enormes (`1300000/21667`) y
@@ -320,3 +320,10 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Plantillas (`templates/<id>/`): intro (primer clip), outro (último), textos/logos y estilo de
   subtítulos, preset de exportación; los medios se copian a la plantilla. En la bienvenida,
   "Nuevo desde plantilla": se eligen los videos y queda intro + videos + outro con todo aplicado.
+
+### Cierre de la tanda A
+- Rust: 149 unit + integración (4 audio, 19 FFmpeg, 9 NVIDIA, 17 proyectos) en verde;
+  `cargo clippy -D warnings` (core y app para Windows) sin avisos; `tsc` (app y tests) limpio.
+- Vitest 108; Playwright 67 (chromium + paridad de video y de audio + rendimiento).
+- Versión 2.1.0. Instalador `Snip_2.1.0-tandaA_x64-setup.exe` (62,7 MB, SHA-256
+  `065656fb…81ad6`) en la rama `instaladores`; la 2.0.0 quedó en `anteriores/`.

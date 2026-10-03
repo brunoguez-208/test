@@ -8,6 +8,7 @@ const SHADOWPLAY = "C:\\Users\\Bruno\\Videos\\Desktop 2026.10.03 - 04.28.16.07.m
 
 test("ShadowPlay: proxy con las pistas mezcladas, elegir una, nombre con puntos", async ({ page }) => {
   await page.goto("/?theme=dark&proxyMs=2500");
+  await page.waitForFunction(() => !!window.__snipMock);
   await page.evaluate((p) => (window.__snipMock.dialogOpenPaths = [p]), SHADOWPLAY);
   await page.getByTestId("welcome-open").click();
   await expect(page.getByTestId("editor")).toBeVisible();
@@ -26,7 +27,7 @@ test("ShadowPlay: proxy con las pistas mezcladas, elegir una, nombre con puntos"
   await page.getByTestId("clip-audio-track-select").click();
   await expect(page.getByRole("option", { name: /Mezclar las 2/ })).toBeVisible();
   await page.getByRole("option", { name: /Solo la pista 2/ }).click();
-  await expect.poll(async () => (await proxyCalls()).some((a) => JSON.stringify(a.tracks) === "[1]")).toBe(true);
+  await expect.poll(async () => (await proxyCalls()).some((a) => JSON.stringify((a as { tracks?: number[] }).tracks) === "[1]")).toBe(true);
 
   await page.getByTestId("inspector-tab-export").click();
   await expect(page.getByTestId("output-name")).toHaveText("Desktop 2026.10.03 - 04.28.16.07_snip.mp4");

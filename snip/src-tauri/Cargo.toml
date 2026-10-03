@@ -1,6 +1,6 @@
 [package]
 name = "snip"
-version = "2.0.0"
+version = "2.1.0"
 description = "Snip — editor de video rápido para Windows 11"
 authors = ["Bruno"]
 edition = "2021"

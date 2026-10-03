@@ -104,5 +104,5 @@ test("curva de volumen, pistas y Mejorar voz", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.__snipMock.jobs.length), { timeout: 10_000 }).toBe(1);
   const job = await page.evaluate(() => window.__snipMock.jobs[0]);
   expect(job.project.music[0].volumeKeys).toHaveLength(1);
-  expect(job.project.tracks.audio[0].solo).toBe(true);
+  expect(job.project.tracks?.audio?.[0]?.solo).toBe(true);
 });
