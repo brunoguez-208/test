@@ -36,7 +36,7 @@ test("sonidos: lista, escuchar al pasar, arrastrar y agregar en el playhead", as
   let p = await project(page);
   const impact = p.media.find((m: { path: string }) => m.path.endsWith("impact.wav"));
   expect(impact).toBeTruthy();
-  expect(p.music[0].mediaId).toBe(impact.id);
+  expect(p.music[0].mediaId).toBe(impact!.id);
   expect(p.music[0].outPoint - p.music[0].inPoint).toBeCloseTo(0.9, 2);
 
   // "+" agrega "Pop" en el playhead (otra fila si se pisan).
@@ -46,5 +46,5 @@ test("sonidos: lista, escuchar al pasar, arrastrar y agregar en el playhead", as
   await expect.poll(async () => (await project(page))?.music?.length ?? 0).toBe(2);
   p = await project(page);
   const pop = p.music.find((m: { mediaId: string }) => p.media.find((x: { id: string; path: string }) => x.id === m.mediaId)?.path.endsWith("pop.wav"));
-  expect(pop.start).toBeCloseTo(2, 1);
+  expect(pop!.start).toBeCloseTo(2, 1);
 });

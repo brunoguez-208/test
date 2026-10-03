@@ -630,7 +630,7 @@ export async function renderZoneAssets(p: Project): Promise<ZoneAssets | null> {
     const mctx = mc.getContext("2d")!;
     // Esquinas × forma, con la misma fórmula que el shader del preview.
     const paint = (ctx: CanvasRenderingContext2D, u: number) =>
-      ctx.putImageData(new ImageData(pipMaskPixels(rect.w, rect.h, radius, o.mask ? maskPx(o.mask, rect.w, rect.h, u) : null), rect.w, rect.h), 0, 0);
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(pipMaskPixels(rect.w, rect.h, radius, o.mask ? maskPx(o.mask, rect.w, rect.h, u) : null)), rect.w, rect.h), 0, 0);
     paint(mctx, 0);
     const mask = o.mask;
     const maskSeq = mask?.keys.length

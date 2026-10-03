@@ -19,7 +19,7 @@ import {
   type Project,
   type Transition,
 } from "./model";
-import { EPS, clipDuration, layout, sourceTime, totalDuration } from "./timeline";
+import { EPS, layout, sourceTime, totalDuration } from "./timeline";
 import { cutKeys } from "./ramp";
 import { clipGeometry } from "./geometry";
 import { splitZoomKeys } from "./zoom";

@@ -73,8 +73,9 @@ test("máscara: círculo, borde, invertir, mover en la vista previa y keyframes"
   await openQueue(page);
   await expect(page.getByTestId("queue-item")).toHaveAttribute("data-state", "done", { timeout: 15_000 });
   const job = await page.evaluate(() => window.__snipMock.jobs[0]);
-  expect(job.project.overlays[0].mask).toMatchObject({ shape: "rounded", invert: true });
-  expect(job.project.overlays[0].mask.keys).toHaveLength(2);
+  const jm = (job.project.overlays[0] as { mask?: Mask | null }).mask;
+  expect(jm).toMatchObject({ shape: "rounded", invert: true });
+  expect(jm?.keys).toHaveLength(2);
   // Raster: la máscara con keyframes viaja como secuencia.
-  expect(job.raster.pips[job.project.overlays[0].id].mask).toMatch(/pipmask0\.ffconcat$/);
+  expect(job.raster?.pips?.[job.project.overlays[0].id]?.mask).toMatch(/pipmask0\.ffconcat$/);
 });

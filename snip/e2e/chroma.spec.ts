@@ -71,5 +71,5 @@ test("chroma key: gotero, similitud, suavidad, reflejo y exportar", async ({ pag
   await openQueue(page);
   await expect(page.getByTestId("queue-item")).toHaveAttribute("data-state", "done", { timeout: 15_000 });
   const job = await page.evaluate(() => window.__snipMock.jobs[0]);
-  expect(job.project.overlays[0].chroma).toMatchObject({ color: picked, despill: 0.5 });
+  expect((job.project.overlays[0] as Pip).chroma).toMatchObject({ color: picked, despill: 0.5 });
 });
