@@ -20,6 +20,7 @@ import {
 } from "./model";
 import { EPS, clipDuration, layout, segmentDuration, totalDuration } from "./timeline";
 import { clipGeometry } from "./geometry";
+import { splitZoomKeys } from "./zoom";
 
 let seq = 0;
 /** Id corto y único (sirve como nombre de archivo del autoguardado). */
@@ -176,12 +177,9 @@ export function splitAt(p: Project, t: number): Project {
       b = { ...c, id: makeId("c"), outPoint: s, transition: null };
     }
   }
-  a = { ...a, audio: { ...a.audio, fadeOut: 0 }, video: { ...a.video, zoom: a.video.zoom.filter((k) => k.t <= u) } };
-  b = {
-    ...b,
-    audio: { ...b.audio, fadeIn: 0 },
-    video: { ...b.video, zoom: b.video.zoom.filter((k) => k.t >= u).map((k) => ({ ...k, t: k.t - u })) },
-  };
+  const [za, zb] = splitZoomKeys(c.video.zoom, u, u);
+  a = { ...a, audio: { ...a.audio, fadeOut: 0 }, video: { ...a.video, zoom: za } };
+  b = { ...b, audio: { ...b.audio, fadeIn: 0 }, video: { ...b.video, zoom: zb } };
   const clips = [...p.clips];
   clips.splice(i, 1, a, b);
   return { ...p, clips };

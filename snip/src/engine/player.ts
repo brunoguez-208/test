@@ -2,7 +2,7 @@
 // (con corrección de deriva y precarga del clip siguiente), audio con WebAudio
 // y el compositor WebGL que arma cada cuadro.
 
-import type { Clip, MediaRef, MusicClip, Project } from "../project/model";
+import type { Clip, Look, MediaRef, MusicClip, Project } from "../project/model";
 import { canvasFps, LOUDNORM_I } from "../project/model";
 import { activeAt, layout, sourceTime, totalDuration, type Span } from "../project/timeline";
 import { dbToGain, resumeAudio, setGain, setMasterVolume } from "./audio";
@@ -531,6 +531,38 @@ export class Player {
       color: colorPipeline(c.video.color, c.video.look),
       sharpen: sharpenWeight(c.video.sharpen),
     };
+  }
+
+  private thumbRenderer: Renderer | null = null;
+
+  /**
+   * Miniaturas del cuadro actual con distintos looks (para elegir uno). Usa el
+   * clip bajo el playhead con sus ajustes; null si todavía no hay cuadro.
+   */
+  lookThumbs(looks: (Look | null)[], w: number, h: number): string[] | null {
+    const p = this.project;
+    if (!p) return null;
+    const f = activeAt(this.spans, this.time);
+    if (!f) return null;
+    const i = f.b ?? f.a;
+    const base = this.clipDraw(i, p);
+    if (!base) return null;
+    try {
+      if (!this.thumbRenderer) {
+        const canvas = document.createElement("canvas");
+        this.thumbRenderer = new Renderer(canvas);
+      }
+      const r = this.thumbRenderer;
+      r.canvas.width = w;
+      r.canvas.height = h;
+      const c = p.clips[i];
+      return looks.map((look) => {
+        r.render({ a: { ...base, zoom: { zoom: 1, cx: 0.5, cy: 0.5 }, color: colorPipeline(c.video.color, look) }, b: null, transition: null, fade: 1, layers: [] }, w, h);
+        return r.canvas.toDataURL("image/jpeg", 0.82);
+      });
+    } catch {
+      return null;
+    }
   }
 
   /** Arma la descripción del cuadro actual. */

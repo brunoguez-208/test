@@ -14,6 +14,8 @@ export type Phase = "welcome" | "editor";
 export type Severity = "info" | "success" | "caution" | "critical";
 export type DragHint = "none" | "valid" | "invalid";
 export type InspectorTab = "clip" | "video" | "audio" | "text" | "export";
+/** Edición directa sobre el preview: recorte del clip o ventana de un keyframe de zoom. */
+export type ImageEdit = { mode: "crop"; clipId: string } | { mode: "zoom"; clipId: string; keyId: number };
 
 export interface Toast {
   id: number;
@@ -81,6 +83,8 @@ export interface EditorState {
   thumbs: Record<string, string>;
   waveforms: Record<string, Uint8Array>;
 
+  imageEdit: ImageEdit | null;
+
   drag: DragHint;
   toasts: Toast[];
   focused: boolean;
@@ -110,6 +114,7 @@ export const initialState: EditorState = {
   proxies: {},
   thumbs: {},
   waveforms: {},
+  imageEdit: null,
   drag: "none",
   toasts: [],
   focused: true,
