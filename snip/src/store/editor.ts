@@ -116,6 +116,8 @@ export interface EditorState {
   sourceMedia: string | null;
   /** Gotero del chroma key activo sobre este PiP (id de la capa). */
   eyedropper: string | null;
+  /** Editando la máscara de este PiP sobre la vista previa. */
+  maskEdit: string | null;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -156,6 +158,7 @@ export const initialState: EditorState = {
   libraryOpen: false,
   sourceMedia: null,
   eyedropper: null,
+  maskEdit: null,
   toasts: [],
   focused: true,
   confirm: null,

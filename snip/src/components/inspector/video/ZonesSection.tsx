@@ -12,6 +12,7 @@ import { Toggle } from "../../ui/Toggle";
 import { Tooltip } from "../../ui/Tooltip";
 import { Field, Section } from "../Field";
 import { ChromaEditor } from "./ChromaEditor";
+import { MaskSection } from "./MaskEditor";
 
 type BlurOverlay = Overlay & BlurLayer & { type: "blur" };
 type PipOverlay = Overlay & PipLayer;
@@ -92,9 +93,11 @@ function PipEditor({ project, o }: { project: Project; o: PipOverlay }) {
       <Field label="Esquinas redondeadas" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{Math.round(o.radius * 200)}%</span>}>
         <RangeSlider label="Esquinas redondeadas del PiP" value={o.radius} min={0} max={0.5} step={0.01} resetTo={0.08} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, radius: v }))} testId="pip-radius" />
       </Field>
-      <Field inline label="Sombra">
-        <Toggle checked={o.shadow} onChange={(on) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, shadow: on }))} label="Sombra del PiP" testId="pip-shadow" />
-      </Field>
+      {!o.mask && (
+        <Field inline label="Sombra">
+          <Toggle checked={o.shadow} onChange={(on) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, shadow: on }))} label="Sombra del PiP" testId="pip-shadow" />
+        </Field>
+      )}
       {m?.hasAudio && (
         <Field label="Volumen" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{o.volume ? `${Math.round(o.volume * 100)}%` : "Sin sonido"}</span>}>
           <RangeSlider label="Volumen del PiP" value={o.volume} min={0} max={1.5} step={0.01} resetTo={0} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, volume: v }))} testId="pip-volume" />
@@ -105,6 +108,7 @@ function PipEditor({ project, o }: { project: Project; o: PipOverlay }) {
           <RangeSlider label="Desde qué segundo del video" value={o.inPoint} min={0} max={maxIn} step={0.1} resetTo={0} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, inPoint: v }))} testId="pip-in" />
         </Field>
       )}
+      <MaskSection project={project} o={o} />
       <ChromaEditor o={o} />
       <div className="flex items-center justify-between">
         <p className="t-caption text-[var(--text-secondary)]">Arrastralo en la vista previa; la esquina lo agranda.</p>

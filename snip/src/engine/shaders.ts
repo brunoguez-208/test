@@ -227,6 +227,27 @@ uniform float uSim;
 uniform float uBlend;
 uniform float uDespill;
 uniform float uSpill;
+// Máscara de forma (engine/mask.ts): 0 rect, 1 redondeado, 2 círculo; rect en px locales.
+uniform float uMaskOn;
+uniform float uMaskShape;
+uniform vec4 uMaskRect;
+uniform float uMaskR;
+uniform float uMaskF;
+uniform float uMaskInv;
+float shapeAlpha(vec2 l) {
+  vec2 h = max(uMaskRect.zw * 0.5, vec2(1e-3));
+  vec2 c = uMaskRect.xy + h;
+  float d;
+  if (uMaskShape > 1.5) {
+    d = (length((l - c) / h) - 1.0) * min(h.x, h.y);
+  } else {
+    float r = uMaskShape > 0.5 ? min(uMaskR, min(h.x, h.y)) : 0.0;
+    vec2 q = abs(l - c) - (h - vec2(r));
+    d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+  }
+  float a = clamp(0.5 - d / uMaskF, 0.0, 1.0);
+  return uMaskInv > 0.5 ? 1.0 - a : a;
+}
 vec2 uvOf(vec3 c) {
   vec3 r = c * 255.0;
   float u = (-0.16874 * r.r - 0.33126 * r.g + 0.5 * r.b) * 224.0 / 255.0 + 128.0;
@@ -241,6 +262,7 @@ void main() {
   vec2 q = abs(local - half_) - (half_ - vec2(uRadius));
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uRadius;
   float a = clamp(0.5 - d, 0.0, 1.0);
+  if (uMaskOn > 0.5) a *= shapeAlpha(local);
   if (a <= 0.0) discard;
   vec3 c = texture(uTex, local / uRect.zw).rgb;
   if (uKeyOn > 0.5) {

@@ -5,6 +5,7 @@ import { BLIT_FRAG, BLUR_H_FRAG, BLUR_V_FRAG, CLIP_FRAG, EFFECT_FRAG, LAYER_FRAG
 import type { ColorPipeline } from "./color";
 import type { ChromaUniforms } from "./chroma";
 import type { EffectDraw } from "./fx";
+import type { MaskPx } from "./mask";
 
 export interface ClipDraw {
   source: TexImageSource;
@@ -40,6 +41,7 @@ export interface PipDraw {
   radius: number;
   shadow: { source: TexImageSource; key: string } | null;
   chroma?: ChromaUniforms | null;
+  mask?: MaskPx | null;
 }
 
 export interface FrameDraw {
@@ -126,7 +128,7 @@ export class Renderer {
     this.blurHProg = this.program(BLUR_H_FRAG, ["uSize", "uSrc", "uZone", "uR"]);
     this.blurVProg = this.program(BLUR_V_FRAG, ["uSize", "uBase", "uH", "uZone", "uR"]);
     this.pixProg = this.program(PIXELATE_FRAG, ["uSize", "uBase", "uZone", "uN"]);
-    this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius", "uKey", "uKeyOn", "uSim", "uBlend", "uDespill", "uSpill"]);
+    this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius", "uKey", "uKeyOn", "uSim", "uBlend", "uDespill", "uSpill", "uMaskOn", "uMaskShape", "uMaskRect", "uMaskR", "uMaskF", "uMaskInv"]);
     this.layerProg = this.program(LAYER_FRAG, ["uSize", "uLayer"]);
     this.effectProg = this.program(EFFECT_FRAG, ["uSize", "uSrc", "uMode", "uWin", "uCanvas", "uK", "uI", "uTint", "uAlpha", "uVignette"]);
     const vao = gl.createVertexArray()!;
@@ -372,6 +374,13 @@ export class Renderer {
       gl.uniform1f(P.loc.uBlend, k?.smoothness ?? 0);
       gl.uniform1f(P.loc.uDespill, k?.despill ?? 0);
       gl.uniform1f(P.loc.uSpill, k?.spill ?? -1);
+      const m = pip.mask;
+      gl.uniform1f(P.loc.uMaskOn, m ? 1 : 0);
+      gl.uniform1f(P.loc.uMaskShape, m?.shape ?? 0);
+      gl.uniform4f(P.loc.uMaskRect, ...(m?.rect ?? [0, 0, 1, 1]));
+      gl.uniform1f(P.loc.uMaskR, m?.radius ?? 0);
+      gl.uniform1f(P.loc.uMaskF, m?.feather ?? 1);
+      gl.uniform1f(P.loc.uMaskInv, m?.invert ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disable(gl.BLEND);
     });

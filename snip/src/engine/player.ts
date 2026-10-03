@@ -9,6 +9,7 @@ import { dbToGain, resumeAudio, setGain, setMasterVolume, setVoice } from "./aud
 import { audioTrack, effectiveFades, keyGain, trackGain, voiceParams, type VoiceParams } from "./audioFx";
 import { chromaUniforms } from "./chroma";
 import { effectDraws } from "./fx";
+import { maskPx } from "./mask";
 import { Renderer, type BlurDraw, type ClipDraw, type FrameDraw, type PipDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
@@ -666,7 +667,7 @@ export class Player {
       const rect = { x: r.x * sx, y: r.y * sy, w: r.w * sx, h: r.h * sy };
       const radius = o.radius * Math.min(rect.w, rect.h);
       let shadow: PipDraw["shadow"] = null;
-      if (o.shadow) {
+      if (o.shadow && !o.mask) {
         const key = JSON.stringify([rect, radius, w, h]);
         let sc = this.shadowCanvases.get(o.id);
         if (!sc || sc.key !== key) {
@@ -680,7 +681,7 @@ export class Player {
         }
         shadow = { source: sc.canvas, key: `${o.id}#${sc.key}` };
       }
-      pips.push({ source: s.el, rect, radius, shadow, chroma: chromaUniforms(o.chroma) });
+      pips.push({ source: s.el, rect, radius, shadow, chroma: chromaUniforms(o.chroma), mask: o.mask ? maskPx(o.mask, rect.w, rect.h, this.time - o.start) : null });
     }
     return { blurs, pips };
   }

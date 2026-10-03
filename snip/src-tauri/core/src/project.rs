@@ -732,6 +732,32 @@ pub struct PipLayer {
     /// Chroma key (pantalla verde/azul).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chroma: Option<ChromaKey>,
+    /// Máscara de forma (la rasteriza el frontend, como las esquinas).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask: Option<LayerMask>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MaskShape {
+    Circle,
+    Rect,
+    Rounded,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerMask {
+    pub shape: MaskShape,
+    pub rect: Rect,
+    #[serde(default)]
+    pub radius: f64,
+    #[serde(default)]
+    pub feather: f64,
+    #[serde(default)]
+    pub invert: bool,
+    #[serde(default)]
+    pub keys: Vec<RectKey>,
 }
 
 /// Quita un color de fondo. `similarity` y `smoothness` como en `chromakey`

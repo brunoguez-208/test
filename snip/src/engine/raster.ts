@@ -5,6 +5,7 @@
 // Todo se mide en fracciones del lienzo (posiciones) o del tamaño de la letra
 // (contorno, sombra, fondo), así el resultado no depende de la resolución.
 
+import { maskPx, pipMaskPixels } from "./mask";
 import type { Cue, ImageLayer, MediaRef, Overlay, Project, SubtitleStyle, TextAnim, TextLayer, TextStyle } from "../project/model";
 import { canvasFps } from "../project/model";
 import { totalDuration } from "../project/timeline";
@@ -537,9 +538,10 @@ async function renderSequence(
   keyAt: (t: number) => string,
   draw: (ctx: CanvasRenderingContext2D, t: number, W: number, H: number) => void,
   onProgress?: (f: number) => void,
+  size?: [number, number],
 ): Promise<DecorSequence> {
-  const W = p.canvas.width;
-  const H = p.canvas.height;
+  const W = size?.[0] ?? p.canvas.width;
+  const H = size?.[1] ?? p.canvas.height;
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
@@ -579,6 +581,8 @@ export async function renderDecorSequence(p: Project, images: ImageSource, onPro
 
 export interface PipAssets {
   mask: Blob;
+  /** Máscara con keyframes: secuencia (del tamaño del PiP) en tiempo del timeline. */
+  maskSeq: DecorSequence | null;
   shadow: Blob | null;
   rect: { x: number; y: number; w: number; h: number };
 }
@@ -623,16 +627,35 @@ export async function renderZoneAssets(p: Project): Promise<ZoneAssets | null> {
     const mc = document.createElement("canvas");
     mc.width = rect.w;
     mc.height = rect.h;
-    drawPipMask(mc.getContext("2d")!, rect.w, rect.h, radius);
+    const mctx = mc.getContext("2d")!;
+    // Esquinas × forma, con la misma fórmula que el shader del preview.
+    const paint = (ctx: CanvasRenderingContext2D, u: number) =>
+      ctx.putImageData(new ImageData(pipMaskPixels(rect.w, rect.h, radius, o.mask ? maskPx(o.mask, rect.w, rect.h, u) : null), rect.w, rect.h), 0, 0);
+    paint(mctx, 0);
+    const mask = o.mask;
+    const maskSeq = mask?.keys.length
+      ? await renderSequence(
+          p,
+          `pm${Object.keys(out.pips).length}_`,
+          (t) => {
+            const u = Math.min(o.duration, Math.max(0, t - o.start));
+            return `k${Math.round(u * fps)}`;
+          },
+          (ctx, t) => paint(ctx, Math.min(o.duration, Math.max(0, t - o.start))),
+          undefined,
+          [rect.w, rect.h],
+        )
+      : null;
     let shadow: Blob | null = null;
-    if (o.shadow) {
+    // Con máscara de forma no hay sombra (seguiría al rectángulo, no a la forma).
+    if (o.shadow && !o.mask) {
       const sc = document.createElement("canvas");
       sc.width = W;
       sc.height = H;
       drawPipShadow(sc.getContext("2d")!, rect, radius, W, H);
       shadow = await canvasToPng(sc);
     }
-    out.pips[o.id] = { mask: await canvasToPng(mc), shadow, rect };
+    out.pips[o.id] = { mask: await canvasToPng(mc), maskSeq, shadow, rect };
   }
   return out;
 }

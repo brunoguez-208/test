@@ -335,7 +335,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B3. Rampas de velocidad
 - [x] B4. Chroma key
 - [x] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
-- [ ] B6. Máscaras
+- [x] B6. Máscaras
 - [ ] B7. Herramientas automáticas (jugadas, silencios, beats)
 - [ ] B8. Pack de sonidos (CC0 / sintetizados)
 - [ ] Cierre: tests completos, instalador final, resumen y checklist manual
@@ -397,3 +397,16 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Paridad SSIM ≥ 0,978 en los cinco (inicios fuera de la grilla de cuadros a propósito),
   integración con píxeles (flash blanco en el pico, esquinas oscuras con la viñeta),
   Vitest (`engine/fx.test.ts`) y Playwright (`effects.spec.ts`).
+
+### Notas de B6 (máscaras)
+- PiP → "Máscara": Círculo, Rectángulo o Redondeado; borde suave, esquinas (redondeado),
+  invertir y "Animar posición y tamaño" (keyframes, como el seguimiento de las zonas).
+  "Acomodar en la vista previa" muestra el rectángulo de la forma dentro del PiP con manijas.
+  Un círculo nuevo es redondo en píxeles aunque el PiP sea 16:9 (cámara en un círculo).
+- Misma fórmula (distancia con signo + suavizado) en el shader del preview y en las PNG de la
+  exportación (`engine/mask.ts`); esquinas del PiP × forma. Con keyframes la máscara viaja como
+  secuencia ffconcat en tiempo del timeline y Rust toma el tramo visible.
+- Con máscara no hay sombra (seguiría al rectángulo, no a la forma): el interruptor se oculta.
+- Paridad SSIM 0,969–0,990 (círculo suave con sombra pedida, redondeada invertida, rectángulo
+  que se mueve y achica), integración (la secuencia cambia la mitad visible a los 2 s),
+  Vitest (`engine/mask.test.ts`) y Playwright (`masks.spec.ts`).

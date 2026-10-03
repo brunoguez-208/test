@@ -344,3 +344,43 @@ test("paridad: efectos de un clic (temblor, zoom punch, flash, glitch, viñeta)"
   frames["sin-efecto"] = 200;
   await check(page, p, frames, "efectos", 0.95, true);
 });
+
+test("paridad: máscaras del PiP (círculo suave, redondeada invertida, rectángulo con keyframes)", async ({ page }) => {
+  test.setTimeout(400_000);
+  let p = base([["a.webm", 0, 4], ["b.webm", 0, 2]]);
+  let c1: string, c2: string, c3: string;
+  [p, c1] = addPip(p, media["c.webm"], 0);
+  [p, c2] = addPip(p, media["b.webm"], 0);
+  [p, c3] = addPip(p, media["c.webm"], 3);
+  const circle = { shape: "circle" as const, rect: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, radius: 0, feather: 0.4, invert: false, keys: [] };
+  p = updateOverlay(p, c1, (o) => (o.type === "video" ? { ...o, duration: 3, x: 0.2, y: 0.3, width: 0.3, radius: 0, shadow: true, mask: circle } : o));
+  p = updateOverlay(p, c2, (o) =>
+    o.type === "video" ? { ...o, duration: 3, x: 0.75, y: 0.7, width: 0.4, radius: 0.1, shadow: false, mask: { shape: "rounded", rect: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }, radius: 0.3, feather: 0.1, invert: true, keys: [] } } : o,
+  );
+  // Rectángulo que se mueve y se achica (keyframes en 0 y 2 s de la capa).
+  p = updateOverlay(p, c3, (o) =>
+    o.type === "video"
+      ? {
+          ...o,
+          duration: 2.5,
+          x: 0.5,
+          y: 0.5,
+          width: 0.5,
+          radius: 0,
+          shadow: false,
+          mask: {
+            shape: "rect",
+            rect: { x: 0, y: 0, w: 1, h: 1 },
+            radius: 0,
+            feather: 0.05,
+            invert: false,
+            keys: [
+              { id: 1, t: 0, rect: { x: 0, y: 0, w: 0.5, h: 0.5 } },
+              { id: 2, t: 2, rect: { x: 0.4, y: 0.3, w: 0.6, h: 0.7 } },
+            ],
+          },
+        }
+      : o,
+  );
+  await check(page, p, { "circulo-y-redondeada": 15, "medio": 60, "final-primeras": 85, "rect-inicio": 92, "rect-moviendose": 120, "rect-final": 155 }, "mascaras", 0.95);
+});

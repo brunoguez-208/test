@@ -575,7 +575,7 @@ fn image_effects_layers_zones_and_pip_together() {
         start: 2.0,
         duration: 3.0,
         lane: 1,
-        content: OverlayContent::Video(PipLayer { media_id: "c".into(), in_point: 0.5, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.7, chroma: None }),
+        content: OverlayContent::Video(PipLayer { media_id: "c".into(), in_point: 0.5, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.7, chroma: None, mask: None }),
     });
     let mut j = job(p, "tanda2.mp4");
     let mut pips = std::collections::HashMap::new();
@@ -667,7 +667,7 @@ fn pip_chroma_key_shows_the_background_and_keeps_the_subject() {
             start: 0.0,
             duration: 3.0,
             lane: 0,
-            content: OverlayContent::Video(PipLayer { media_id: "g".into(), in_point: 0.0, x: 0.5, y: 0.5, width: 1.0, radius: 0.0, shadow: false, volume: 0.0, chroma: chroma.clone() }),
+            content: OverlayContent::Video(PipLayer { media_id: "g".into(), in_point: 0.0, x: 0.5, y: 0.5, width: 1.0, radius: 0.0, shadow: false, volume: 0.0, chroma: chroma.clone(), mask: None }),
         });
         let mut j = job(p, name);
         let mut pips = std::collections::HashMap::new();
@@ -718,4 +718,42 @@ fn effect_blocks_flash_vignette_and_shake_render_where_they_should() {
     assert!((luma(2.7, center) - base).abs() < 4, "centro");
     assert!((luma(3.55, corner) - base).abs() < 4, "fuera de la viñeta");
     assert!((probe(&o.output).duration - 4.0).abs() < 0.1);
+}
+
+#[test]
+fn pip_mask_sequence_follows_the_timeline() {
+    guard!();
+    use snip_core::project_export::{PipSpec, RasterSpec};
+    let r = fx().root.join("mask");
+    std::fs::create_dir_all(&r).unwrap();
+    let rp = |n: &str| r.join(n).to_string_lossy().into_owned();
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=0x2040c0:s=640x360:r=30:d=4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &rp("fondo.mp4")]);
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=0xd02020:s=640x360:r=30:d=4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &rp("rojo.mp4")]);
+    // Dos estados de la máscara (mitad izquierda, después mitad derecha), como los arma el frontend.
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=black:s=640x360,drawbox=x=0:y=0:w=320:h=360:color=white:t=fill", "-frames:v", "1", &rp("pm_00001.png")]);
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=black:s=640x360,drawbox=x=320:y=0:w=320:h=360:color=white:t=fill", "-frames:v", "1", &rp("pm_00002.png")]);
+    std::fs::write(r.join("pipmask0.ffconcat"), "ffconcat version 1.0\nfile 'pm_00001.png'\nduration 2.0\nfile 'pm_00002.png'\nduration 10\nfile 'pm_00002.png'\n").unwrap();
+    let mut p = project(vec![media("f", "mask/fondo.mp4"), media("g", "mask/rojo.mp4")], vec![clip("c1", "f", 0.0, 4.0)]);
+    p.overlays.push(Overlay {
+        id: "pip".into(),
+        start: 0.0,
+        duration: 4.0,
+        lane: 0,
+        content: OverlayContent::Video(PipLayer { media_id: "g".into(), in_point: 0.0, x: 0.5, y: 0.5, width: 1.0, radius: 0.0, shadow: false, volume: 0.0, chroma: None, mask: None }),
+    });
+    let mut j = job(p, "mascara.mp4");
+    let mut pips = std::collections::HashMap::new();
+    pips.insert("pip".to_string(), PipSpec { mask: rp("pipmask0.ffconcat"), shadow: None, width: 640, height: 360, x: 0, y: 0, shadow_x: 0, shadow_y: 0 });
+    j.raster = Some(RasterSpec { dir: None, decor: None, masks: Default::default(), pips });
+    let o = run_job(j);
+    let red = |t: f64, x: u32| {
+        let out = Command::new(&fx().tools.ffmpeg)
+            .args(["-v", "error", "-ss", &format!("{t}"), "-i", &o.output, "-frames:v", "1", "-vf", &format!("crop=20:20:{x}:170,scale=1:1,format=rgb24"), "-f", "rawvideo", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        out[0] > 150 && out[2] < 100
+    };
+    assert!(red(1.0, 100) && !red(1.0, 500), "primero la mitad izquierda");
+    assert!(!red(3.0, 100) && red(3.0, 500), "después la derecha");
 }

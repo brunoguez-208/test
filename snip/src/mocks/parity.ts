@@ -98,7 +98,9 @@ export function installParity() {
       for (const [i, [id, a]] of Object.entries(zones?.pips ?? {}).entries()) {
         out.files.push({ name: `pipmask${i}.png`, data: await b64(a.mask) });
         if (a.shadow) out.files.push({ name: `pipshadow${i}.png`, data: await b64(a.shadow) });
-        out.pips[id] = { mask: `pipmask${i}.png`, shadow: a.shadow ? `pipshadow${i}.png` : null, width: a.rect.w, height: a.rect.h, x: a.rect.x, y: a.rect.y };
+        for (const f of a.maskSeq?.frames ?? []) out.files.push({ name: f.name, data: await b64(f.png) });
+        if (a.maskSeq) out.files.push({ name: `pipmask${i}.ffconcat`, data: btoa(a.maskSeq.list) });
+        out.pips[id] = { mask: a.maskSeq ? `pipmask${i}.ffconcat` : `pipmask${i}.png`, shadow: a.shadow ? `pipshadow${i}.png` : null, width: a.rect.w, height: a.rect.h, x: a.rect.x, y: a.rect.y };
       }
       return out;
     },

@@ -2,9 +2,9 @@
 // e imán al centro) y la manija de la esquina cambia el tamaño.
 
 import { useState } from "react";
-import type { BlurLayer, ImageLayer, Overlay, Project, TextLayer } from "../../project/model";
+import type { BlurLayer, ImageLayer, Overlay, PipLayer, Project, TextLayer } from "../../project/model";
 import { canvasFps } from "../../project/model";
-import { pipRect, rectAt, setBlurRectAt, updateOverlay } from "../../project/overlayOps";
+import { pipRect, rectAt, setBlurRectAt, setMaskRectAt, updateOverlay } from "../../project/overlayOps";
 import { dragCrop } from "./ImageEditors";
 import { imageRect, isActive, measureText } from "../../engine/raster";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor } from "../../store/editor";
@@ -121,10 +121,12 @@ export function OverlayEditor({ project }: { project: Project }) {
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   const time = useEditor((s) => s.time);
   const [guides, setGuides] = useState({ x: false, y: false });
+  const maskEdit = useEditor((s) => s.maskEdit);
   const o = project.overlays.find((x) => selection.includes(x.id) && isActive(x, time));
   if (o?.type === "blur") return <ZoneEditor project={project} o={o as Overlay & BlurLayer & { type: "blur" }} time={time} />;
   const box = o ? overlayBox(project, o) : null;
   if (!o || !box) return null;
+  if (o.type === "video" && o.mask && maskEdit === o.id) return <MaskEditor project={project} o={o as Overlay & PipLayer} box={box} time={time} />;
   const pct = (v: number) => `${v * 100}%`;
   return (
     <div className="pointer-events-none absolute inset-0" data-testid="overlay-editor">
@@ -153,6 +155,60 @@ export function OverlayEditor({ project }: { project: Project }) {
 }
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+
+/** Máscara del PiP: el rectángulo de la forma dentro de la caja del PiP, con manijas. */
+function MaskEditor({ project, o, box, time }: { project: Project; o: Overlay & PipLayer; box: Box; time: number }) {
+  const [active, setActive] = useState<string | null>(null);
+  const mask = o.mask!;
+  const u = Math.min(o.duration, Math.max(0, time - o.start));
+  const r = rectAt(mask, u);
+  const down = (h: (typeof HANDLES)[number] | "move") => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const frame = (e.currentTarget as HTMLElement).closest("[data-mask-box]") as HTMLElement;
+    const rr = frame.getBoundingClientRect();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const from = { ...r };
+    let started = false;
+    setActive(h);
+    const move = (ev: PointerEvent) => {
+      if (!started) {
+        if (Math.abs(ev.clientX - x0) < 2 && Math.abs(ev.clientY - y0) < 2) return;
+        started = true;
+        gestureStart();
+      }
+      const n = dragCrop(from, h, (ev.clientX - x0) / rr.width, (ev.clientY - y0) / rr.height, null);
+      edit(() => setMaskRectAt(project, o.id, u, { x: n.x, y: n.y, w: n.w, h: n.h }, 1 / canvasFps(project.canvas)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setActive(null);
+      if (started) gestureEnd();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const pct = (v: number) => `${v * 100}%`;
+  return (
+    <div className="pointer-events-none absolute inset-0" data-testid="mask-editor">
+      <div className="mask-frame absolute" style={{ left: pct(box.x), top: pct(box.y), width: pct(box.w), height: pct(box.h) }} data-mask-box>
+        <div
+          className={`zone-rect mask-rect pointer-events-auto absolute ${mask.shape === "circle" ? "is-circle" : ""} ${active === "move" ? "is-active" : ""}`}
+          style={{ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) }}
+          onPointerDown={down("move")}
+          data-testid="mask-rect"
+        >
+          {HANDLES.map((h) => (
+            <span key={h} className={`crop-handle crop-handle-${h} ${active === h ? "is-active" : ""}`} onPointerDown={down(h)} data-testid={`mask-handle-${h}`} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Zona desenfocada: mover y redimensionar con manijas (con keyframes, edita el del cuadro actual). */
 function ZoneEditor({ project, o, time }: { project: Project; o: Overlay & BlurLayer & { type: "blur" }; time: number }) {

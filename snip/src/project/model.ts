@@ -256,6 +256,22 @@ export interface ChromaKey {
 }
 export const DEFAULT_CHROMA: ChromaKey = { color: "#00b140", similarity: 0.15, smoothness: 0.08, despill: 0.5 };
 
+export type MaskShape = "circle" | "rect" | "rounded";
+/**
+ * Máscara de forma de una capa (PiP): rectángulo normalizado dentro de la capa
+ * (con keyframes opcionales, t local), borde suavizado e invertible.
+ */
+export interface LayerMask {
+  shape: MaskShape;
+  rect: Rect;
+  /** Esquinas del rectángulo redondeado (fracción del lado menor, 0..0,5). */
+  radius: number;
+  /** Suavizado del borde (0..1). */
+  feather: number;
+  invert: boolean;
+  keys: RectKey[];
+}
+
 export interface PipLayer {
   type: "video";
   mediaId: string;
@@ -267,6 +283,7 @@ export interface PipLayer {
   shadow: boolean;
   volume: number;
   chroma?: ChromaKey | null;
+  mask?: LayerMask | null;
 }
 export interface Rect {
   x: number;

@@ -1,6 +1,6 @@
 // Superposiciones (texto, logo/imagen) y subtítulos: operaciones puras.
 
-import type { BlurLayer, Cue, EffectKind, ImageLayer, MediaRef, Overlay, OverlayContent, PipLayer, Project, Rect, RectKey, SubtitleStyle, TextLayer } from "./model";
+import type { BlurLayer, Cue, EffectKind, ImageLayer, LayerMask, MediaRef, Overlay, OverlayContent, PipLayer, Project, Rect, RectKey, SubtitleStyle, TextLayer } from "./model";
 import { EFFECTS } from "./effects";
 import { addMedia, makeId } from "./ops";
 import { totalDuration } from "./timeline";
@@ -154,6 +154,40 @@ export function rectAt(b: Pick<BlurLayer, "rect" | "keys">, u: number): Rect {
     }
   }
   return keys[keys.length - 1].rect;
+}
+
+// ------------------------------- Máscaras del PiP -------------------------------
+
+export function setPipMask(p: Project, id: string, mask: LayerMask | null): Project {
+  return updateOverlay(p, id, (o) => (o.type === "video" ? { ...o, mask } : o));
+}
+
+/** Cambia el rectángulo de la máscara en u (sin keyframes, el fijo; con keyframes, el del cuadro). */
+export function setMaskRectAt(p: Project, id: string, u: number, rect: Rect, frame = 1 / 30): Project {
+  return updateOverlay(p, id, (o) => {
+    if (o.type !== "video" || !o.mask) return o;
+    const m = o.mask;
+    const r = { x: rect.x, y: rect.y, w: Math.max(0.02, rect.w), h: Math.max(0.02, rect.h) };
+    if (!m.keys.length) return { ...o, mask: { ...m, rect: r } };
+    const near = m.keys.find((k) => Math.abs(k.t - u) < frame / 2);
+    const keys = near ? m.keys.map((k) => (k === near ? { ...k, rect: r } : k)) : [...m.keys, { id: Math.max(0, ...m.keys.map((k) => k.id)) + 1, t: u, rect: r }];
+    return { ...o, mask: { ...m, keys: keys.sort((a, b) => a.t - b.t) } };
+  });
+}
+
+/** Activa el seguimiento de la máscara: primer keyframe con el rectángulo actual. */
+export function addMaskKey(p: Project, id: string, u: number): Project {
+  return updateOverlay(p, id, (o) => {
+    if (o.type !== "video" || !o.mask) return o;
+    const t = Math.min(o.duration, Math.max(0, u));
+    if (o.mask.keys.some((k) => Math.abs(k.t - t) < 1e-3)) return o;
+    const key: RectKey = { id: Math.max(0, ...o.mask.keys.map((k) => k.id)) + 1, t, rect: rectAt(o.mask, t) };
+    return { ...o, mask: { ...o.mask, keys: [...o.mask.keys, key].sort((a, b) => a.t - b.t) } };
+  });
+}
+
+export function removeMaskKeys(p: Project, id: string, u: number): Project {
+  return updateOverlay(p, id, (o) => (o.type === "video" && o.mask ? { ...o, mask: { ...o.mask, rect: rectAt(o.mask, u), keys: [] } } : o));
 }
 
 /** Zona desenfocada nueva en el playhead (3 s, al centro). */

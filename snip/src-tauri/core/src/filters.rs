@@ -284,9 +284,19 @@ pub fn apply_overlays(
             ),
             &pv,
         );
-        let mk = inputs.add(vec!["-loop".into(), "1".into(), "-t".into(), num(dur)], &spec.mask);
         let pm = g.label("pm");
-        g.add(&[&format!("{mk}:v:0")], &format!("format=gray,scale={}:{},fps={fps}", spec.width, spec.height), &pm);
+        if spec.mask.ends_with(".ffconcat") {
+            // Máscara con keyframes: secuencia en tiempo del timeline, se toma el tramo visible.
+            let mk = inputs.add(vec!["-f".into(), "concat".into(), "-safe".into(), "0".into()], &spec.mask);
+            g.add(
+                &[&format!("{mk}:v:0")],
+                &format!("format=gray,trim=start={}:duration={},setpts=PTS-STARTPTS,scale={}:{},fps={fps}", num(s0), num(dur), spec.width, spec.height),
+                &pm,
+            );
+        } else {
+            let mk = inputs.add(vec!["-loop".into(), "1".into(), "-t".into(), num(dur)], &spec.mask);
+            g.add(&[&format!("{mk}:v:0")], &format!("format=gray,scale={}:{},fps={fps}", spec.width, spec.height), &pm);
+        }
         let pa = g.label("pa");
         match v.chroma.as_ref().and_then(crate::chroma::filters) {
             // Con chroma key: alfa = máscara × llave (como el shader del preview).
@@ -514,7 +524,7 @@ mod tests {
     #[test]
     fn pip_is_cut_to_the_window_and_mixes_audio() {
         let mut p = with_overlay(
-            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 2.0, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.5, chroma: None }),
+            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 2.0, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.5, chroma: None, mask: None }),
             1.0,
             4.0,
         );
@@ -545,6 +555,23 @@ mod tests {
     }
 
     #[test]
+    fn keyframed_pip_mask_reads_a_sequence_cut_to_the_window() {
+        let mut p = with_overlay(
+            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 0.0, x: 0.5, y: 0.5, width: 0.3, radius: 0.0, shadow: false, volume: 0.0, chroma: None, mask: None }),
+            1.0,
+            4.0,
+        );
+        p.overlays[0].id = "o1".into();
+        let mut r = crate::compile::RasterInputs::default();
+        r.pip.insert("o1".into(), crate::compile::PipRaster { mask: "/r/pipmask0.ffconcat".into(), shadow: None, width: 384, height: 216, x: 0, y: 0, shadow_x: 0, shadow_y: 0 });
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 0.0, 10.0).unwrap();
+        assert_eq!(inputs.list[1][..4], ["-f", "concat", "-safe", "0"]);
+        let f = g.build();
+        assert!(f.contains("format=gray,trim=start=1.000000:duration=4.000000,setpts=PTS-STARTPTS,scale=384:216"), "{f}");
+    }
+
+    #[test]
     fn pip_chroma_multiplies_the_key_with_the_mask() {
         let mut p = with_overlay(
             OverlayContent::Video(PipLayer {
@@ -557,6 +584,7 @@ mod tests {
                 shadow: false,
                 volume: 0.0,
                 chroma: Some(ChromaKey { color: "#00b140".into(), similarity: 0.2, smoothness: 0.1, despill: 0.6 }),
+                mask: None,
             }),
             0.0,
             5.0,

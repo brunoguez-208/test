@@ -1029,6 +1029,7 @@ export async function prepareRaster(p: Project): Promise<RasterSpec | null> {
   const pipEntries = Object.entries(zones?.pips ?? {});
   for (const [i, [, a]] of pipEntries.entries()) {
     await put(`pipmask${i}.png`, a.mask);
+    for (const f of a.maskSeq?.frames ?? []) await put(f.name, f.png);
     if (a.shadow) await put(`pipshadow${i}.png`, a.shadow);
   }
   await flush();
@@ -1038,7 +1039,7 @@ export async function prepareRaster(p: Project): Promise<RasterSpec | null> {
   for (const [i, [oid, ms]] of maskSeqs.entries()) spec.masks![oid] = await api.writeRasterList(id, `blur${i}.ffconcat`, ms.list);
   for (const [i, [oid, a]] of pipEntries.entries()) {
     spec.pips![oid] = {
-      mask: `${dir}${sep}pipmask${i}.png`,
+      mask: a.maskSeq ? await api.writeRasterList(id, `pipmask${i}.ffconcat`, a.maskSeq.list) : `${dir}${sep}pipmask${i}.png`,
       shadow: a.shadow ? `${dir}${sep}pipshadow${i}.png` : null,
       width: a.rect.w,
       height: a.rect.h,
