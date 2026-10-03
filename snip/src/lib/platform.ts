@@ -31,6 +31,7 @@ export const api = {
   requestThumbnails: (group: string, generation: number, items: { path: string; time: number }[], height: number) =>
     invoke<void>("request_thumbnails", { group, generation, items, height }),
   getWaveform: (path: string) => invoke<string>("get_waveform", { path }),
+  analyzeAudio: (path: string, tracks: number) => invoke<{ rate: number; level: string; onset: string }>("analyze_audio", { path, tracks }),
   analyzeLoudness: (path: string, start: number, duration: number) => invoke<Loudness>("analyze_loudness", { path, start, duration }),
   createPreviewProxy: (path: string, duration: number, fps: number, tracks?: number[], transfer?: string | null) =>
     invoke<string>("create_preview_proxy", { path, duration, fps, tracks: tracks ?? null, transfer: transfer ?? null }),

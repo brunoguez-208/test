@@ -181,3 +181,34 @@ fn enhance_voice_cuts_hum_and_adds_presence() {
     // El zumbido baja bastante más que la voz.
     assert!(hum - voice > 6.0, "zumbido −{hum} dB, voz −{voice} dB");
 }
+
+#[test]
+fn analysis_finds_level_silence_and_attacks() {
+    guard!();
+    // 1 s de tono, 1 s de silencio, golpes cada 0,5 s; y un archivo con dos pistas.
+    let p = |n: &str| fx().root.join(n).to_string_lossy().into_owned();
+    gen(&fx().tools, &[
+        "-f", "lavfi", "-i", "sine=f=440:r=48000:d=1,volume=0.5", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=1",
+        "-f", "lavfi", "-i", "aevalsrc='0.9*sin(2*PI*1000*t)*lt(mod(t,0.5),0.03)':s=48000:d=2",
+        "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", &p("analisis.wav"),
+    ]);
+    let a = snip_core::analysis::analyze(&fx().tools, std::path::Path::new(&p("analisis.wav")), 1).unwrap();
+    assert_eq!(a.rate, 100);
+    assert!((a.level.len() as i32 - 400).abs() <= 2, "{}", a.level.len());
+    let db = |i: usize| a.level[i] as f32 / 2.0 - 100.0;
+    // `sine` sale con amplitud 1/8: × 0,5 → RMS −27 dBFS.
+    assert!((db(50) + 27.0).abs() < 1.0, "tono: {}", db(50));
+    assert!(db(150) < -80.0, "silencio: {}", db(150));
+    // Los ataques más fuertes caen en los golpes (2,0 · 2,5 · 3,0 · 3,5 s).
+    let mut top: Vec<usize> = (205..400).filter(|&i| a.onset[i] > 128).collect();
+    top.dedup_by(|x, y| *x - *y < 10);
+    assert!(top.iter().all(|&i| (i % 50) < 4 || (i % 50) > 46), "ataques en {top:?}");
+    assert!(top.len() >= 3, "{top:?}");
+    // Dos pistas (ShadowPlay): se mezclan.
+    gen(&fx().tools, &[
+        "-f", "lavfi", "-i", "sine=f=300:r=48000:d=1", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=1",
+        "-map", "0", "-map", "1", "-c:a", "aac", &p("dos.m4a"),
+    ]);
+    let b = snip_core::analysis::analyze(&fx().tools, std::path::Path::new(&p("dos.m4a")), 2).unwrap();
+    assert!((b.level[50] as f32 / 2.0 - 100.0) > -25.0, "{}", b.level[50] as f32 / 2.0 - 100.0);
+}

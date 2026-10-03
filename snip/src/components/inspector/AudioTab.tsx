@@ -1,3 +1,4 @@
+import { AutoSection } from "./AutoSection";
 import { AnimatePresence, motion } from "motion/react";
 import { Delete16Regular, MusicNote220Regular, MusicNote216Regular, ArrowExport20Regular, ArrowSplit20Regular, ArrowJoin20Regular } from "@fluentui/react-icons";
 import type { Clip, MusicClip, Project, TrackState, VoiceEnhance } from "../../project/model";
@@ -255,6 +256,7 @@ export function AudioTab({ project }: { project: Project }) {
         )}
       </Section>
       <TracksSection project={project} />
+      <AutoSection project={project} />
       <Section title="Extraer">
         <Button icon={<ArrowExport20Regular />} onClick={() => void extractAudio()} disabled={!project.clips.length} data-testid="extract-mp3">
           Extraer el audio a MP3

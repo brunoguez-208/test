@@ -337,10 +337,13 @@ export interface MusicClip {
   muted?: boolean;
 }
 
+export type MarkerKind = "play" | "beat";
 export interface Marker {
   id: string;
   time: number;
   name: string;
+  /** Marcadores automáticos: jugada o beat (los beats se ven como rayitas). */
+  kind?: MarkerKind;
 }
 
 export interface TimeRange {

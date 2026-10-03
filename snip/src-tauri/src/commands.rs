@@ -180,6 +180,38 @@ pub async fn get_waveform(app: AppHandle, path: String) -> CmdResult<String> {
     .await
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioAnalysisDto {
+    pub rate: u32,
+    /// base64: u8 = (dB + 100) × 2 por cuadro.
+    pub level: String,
+    /// base64: ataque 0..255 por cuadro.
+    pub onset: String,
+}
+
+/// Nivel y ataques cada 10 ms (herramientas automáticas). Se cachea por archivo y pistas.
+#[tauri::command]
+pub async fn analyze_audio(app: AppHandle, path: String, tracks: Option<u32>) -> CmdResult<AudioAnalysisDto> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let key = format!("{path}#{}", tracks.unwrap_or(1));
+        let a = match state.analyses.lock().ok().and_then(|g| g.get(&key).cloned()) {
+            Some(a) => a,
+            None => {
+                let a = std::sync::Arc::new(snip_core::analysis::analyze(&state.tools, Path::new(&path), tracks.unwrap_or(1))?);
+                if let Ok(mut g) = state.analyses.lock() {
+                    g.insert(key, a.clone());
+                }
+                a
+            }
+        };
+        let b = base64::engine::general_purpose::STANDARD;
+        Ok(AudioAnalysisDto { rate: a.rate, level: b.encode(&a.level), onset: b.encode(&a.onset) })
+    })
+    .await
+}
+
 /// Primera pasada de loudnorm (para normalizar un clip).
 #[tauri::command]
 pub async fn analyze_loudness(state: State<'_, AppState>, path: String, start: f64, duration: f64) -> CmdResult<Loudness> {

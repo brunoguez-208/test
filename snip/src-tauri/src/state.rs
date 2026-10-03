@@ -30,6 +30,7 @@ pub struct AppState {
     /// Etapa pesada para el preview, por clave del clip.
     pub heavy_jobs: Mutex<HashMap<String, JobControl>>,
     pub waveforms: Mutex<HashMap<String, std::sync::Arc<Vec<u8>>>>,
+    pub analyses: Mutex<HashMap<String, std::sync::Arc<snip_core::analysis::AudioAnalysis>>>,
     pub queue: OnceLock<ExportQueue>,
     /// Datos de la app (proyectos, recientes, modelos).
     pub data_dir: PathBuf,
@@ -112,6 +113,7 @@ impl AppState {
             thumbs_jobs: Mutex::new(HashMap::new()),
             heavy_jobs: Mutex::new(HashMap::new()),
             waveforms: Mutex::new(HashMap::new()),
+            analyses: Mutex::new(HashMap::new()),
             queue: OnceLock::new(),
             encoder: Mutex::new(None),
         }

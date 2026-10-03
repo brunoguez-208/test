@@ -336,7 +336,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B4. Chroma key
 - [x] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
 - [x] B6. Máscaras
-- [ ] B7. Herramientas automáticas (jugadas, silencios, beats)
+- [x] B7. Herramientas automáticas (jugadas, silencios, beats)
 - [ ] B8. Pack de sonidos (CC0 / sintetizados)
 - [ ] Cierre: tests completos, instalador final, resumen y checklist manual
 
@@ -410,3 +410,21 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Paridad SSIM 0,969–0,990 (círculo suave con sombra pedida, redondeada invertida, rectángulo
   que se mueve y achica), integración (la secuencia cambia la mitad visible a los 2 s),
   Vitest (`engine/mask.test.ts`) y Playwright (`masks.spec.ts`).
+
+### Notas de B7 (herramientas automáticas, todo local)
+- Rust (`core/src/analysis.rs`, comando `analyze_audio`, cacheado): decodifica a 24 kHz mono
+  (mezcla las pistas de ShadowPlay) y da, cada 10 ms, el nivel RMS en dB y el ataque
+  (flujo espectral con FFT propia de 1024). Los algoritmos están en `src/project/autoTools.ts`.
+- Pestaña Audio → "Automático":
+  - Detectar jugadas: picos claramente sobre lo normal del video (sensibilidad), con 4 s de
+    separación mínima → marcadores "Jugada N" (rojos). Opción: fragmentos de ±X s, listos
+    para exportar. Volver a detectar reemplaza; Shift+M salta entre ellas.
+  - Cortar silencios: umbral en dB, duración mínima y margen. "Buscar" los muestra en rojo
+    sobre el timeline sin tocar nada; "Cortar" los saca en una sola edición (Ctrl+Z). Si el
+    proyecto cambia, la vista previa se descarta.
+  - Beats de la música: tempo por autocorrelación (60–200 BPM, fraccionario) y cada beat
+    ajustado al ataque más cercano (no deriva). Son marcadores livianos (rayitas en la regla):
+    el imán los toma; Shift+M no los recorre.
+- Arreglo de paso: `deleteRange` no borraba nada si los bordes no caían en un cuadro.
+- Tests: unitarios Rust (FFT, nivel, ataques), integración (tono/silencio/golpes reales y dos
+  pistas), Vitest (`autoTools.test.ts`) y Playwright (`auto-tools.spec.ts`).

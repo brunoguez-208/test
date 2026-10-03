@@ -862,6 +862,9 @@ pub struct Marker {
     pub time: f64,
     #[serde(default)]
     pub name: String,
+    /// "play" o "beat" (marcadores automáticos).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

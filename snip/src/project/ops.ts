@@ -226,7 +226,9 @@ export function deleteRange(p: Project, a: number, b: number): Project {
   if (hi < total - EPS) trySplit(hi);
   if (lo > EPS) trySplit(lo);
   const spans = layout(q.clips);
-  const remove = q.clips.filter((_, i) => spans[i].start >= lo - 1e-3 && spans[i].end <= hi + 1e-3).map((c) => c.id);
+  // Los cortes caen en cuadros: medio cuadro de tolerancia en los bordes.
+  const tol = 0.5 / canvasFps(q.canvas) + 1e-3;
+  const remove = q.clips.filter((_, i) => spans[i].start >= lo - tol && spans[i].end <= hi + tol).map((c) => c.id);
   if (!remove.length) throw new EditError("No hay nada para borrar en ese fragmento.");
   return deleteClips(q, remove);
 }
@@ -366,7 +368,8 @@ export function removeMarker(p: Project, id: string): Project {
 
 /** Marcador siguiente (dir=1) o anterior (dir=-1) respecto de t. */
 export function adjacentMarker(p: Project, t: number, dir: 1 | -1): number | null {
-  const times = p.markers.map((m) => m.time);
+  // Los beats no cuentan (serían demasiados saltos).
+  const times = p.markers.filter((m) => m.kind !== "beat").map((m) => m.time);
   if (dir > 0) return times.find((x) => x > t + 1e-3) ?? null;
   const prev = times.filter((x) => x < t - 1e-3);
   return prev.length ? prev[prev.length - 1] : null;

@@ -86,6 +86,28 @@ function fakePeaks(seconds: number): string {
   return btoa(s);
 }
 
+/**
+ * Análisis de audio falso y predecible. Video (12 s): base −30 dB, jugadas
+ * (−6 dB) en 3 s y 8,5 s, silencios en 5–6,2 s y 10–10,8 s. Música (60 s):
+ * −14 dB con ataques a 120 BPM desde 0,25 s.
+ */
+function fakeAnalysis(path: string): { rate: number; level: string; onset: string } {
+  const music = /\.(mp3|m4a|wav)/i.test(path);
+  const n = (music ? 60 : 12) * 100;
+  let level = "";
+  let onset = "";
+  for (let i = 0; i < n; i++) {
+    const t = i / 100;
+    let db = music ? -14 : -30;
+    if (!music && ((t >= 3 && t < 3.4) || (t >= 8.5 && t < 8.9))) db = -6;
+    if (!music && ((t >= 5 && t < 6.2) || (t >= 10 && t < 10.8))) db = -80;
+    const beat = music && i >= 25 && (i - 25) % 50 === 0;
+    level += String.fromCharCode(Math.round((db + 100) * 2));
+    onset += String.fromCharCode(beat ? 255 : music ? 12 : 30);
+  }
+  return { rate: 100, level: btoa(level), onset: btoa(onset) };
+}
+
 declare global {
   interface Window {
     __snipMock: MockState;
@@ -330,6 +352,9 @@ export function installTauriMock() {
           });
           return null;
         }
+        case "analyze_audio":
+          await new Promise((r) => setTimeout(r, Number(params.get("analyzeMs") ?? 200)));
+          return fakeAnalysis(String(a.path));
         case "get_waveform":
           return fakePeaks(/\.(mp3|m4a|wav)/i.test(String(a.path)) ? 60 : 12);
         case "analyze_loudness":

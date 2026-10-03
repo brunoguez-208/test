@@ -103,7 +103,7 @@ pub fn sample_project() -> Project {
             source_track: None,
             muted: false,
     });
-    p.markers.push(Marker { id: "k1".into(), time: 2.0, name: "Gol".into() });
+    p.markers.push(Marker { id: "k1".into(), time: 2.0, name: "Gol".into(), kind: None });
     p.ranges.push(TimeRange { id: "r1".into(), start: 0.5, end: 2.5, name: String::new() });
     p.overlays.push(Overlay {
         id: "t1".into(),

@@ -1,3 +1,4 @@
+import { currentSilences } from "../../store/autoTools";
 import { dropTargetAt, setDropGeo } from "./dropTarget";
 import { MEDIA_MIME } from "../library/Library";
 import { RANGE_MIME } from "../library/SourceViewer";
@@ -32,6 +33,28 @@ import { VideoTrack } from "./VideoTrack";
 import { MainAudioTrack, MusicTrack, musicRows } from "./AudioTracks";
 import { OverlayTrack, SubtitleTrack, overlayLanes } from "./OverlayTracks";
 import { setScroll, zoomTimeline } from "./zoom";
+
+/** Silencios encontrados, antes de cortarlos (rojo translúcido sobre las pistas). */
+function SilenceBands({ project, geo, height }: { project: Project; geo: Geo; height: number }) {
+  const prev = useEditor((s) => s.silencePreview);
+  const bands = currentSilences(project, prev);
+  if (!bands?.length) return null;
+  return (
+    <>
+      {bands.map(([a, b], i) => (
+        <motion.div
+          key={`${a}-${b}`}
+          className="tl-silence pointer-events-none absolute top-0 z-[15]"
+          style={{ left: tToX(geo, a), width: Math.max(2, (b - a) * geo.pps), height }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: Math.min(0.3, i * 0.02) }}
+          data-testid="silence-band"
+        />
+      ))}
+    </>
+  );
+}
 
 function Ruler({ project, geo, onScrubStart }: { project: Project; geo: Geo; onScrubStart: (e: React.PointerEvent) => void }) {
   const tab = useEditor((s) => activeTab(s));
@@ -115,11 +138,15 @@ function Ruler({ project, geo, onScrubStart }: { project: Project; geo: Geo; onS
           </div>
         );
       })}
-      {project.markers.map((m) => (
+      {/* Beats: rayitas livianas (son marcadores: el imán los toma). */}
+      {project.markers.map((m) =>
+        m.kind === "beat" ? <span key={m.id} className="tl-beat pointer-events-none absolute bottom-0 h-[7px] w-px" style={{ left: tToX(geo, m.time) }} data-testid="beat-marker" /> : null,
+      )}
+      {project.markers.filter((m) => m.kind !== "beat").map((m) => (
         <div key={m.id} className="absolute top-0 z-10" style={{ left: tToX(geo, m.time) - 6 }}>
           <motion.button
             type="button"
-            className={`tl-marker flex h-[14px] w-3 items-start justify-center ${selection.includes(m.id) ? "is-selected" : ""}`}
+            className={`tl-marker flex h-[14px] w-3 items-start justify-center ${m.kind === "play" ? "is-play" : ""} ${selection.includes(m.id) ? "is-selected" : ""}`}
             onPointerDown={markerDown(m.id, m.time)}
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -387,6 +414,7 @@ export function Timeline({ project }: { project: Project }) {
             <MainAudioTrack project={project} geo={geo} />
             {hasMusic && <MusicTrack project={project} geo={geo} snapOn={snapOn} />}
           </div>
+          <SilenceBands project={project} geo={geo} height={tracksH} />
           <Playhead geo={geo} height={tracksH} />
           {dropTarget && (
             <motion.div

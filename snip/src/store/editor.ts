@@ -118,6 +118,10 @@ export interface EditorState {
   eyedropper: string | null;
   /** Editando la máscara de este PiP sobre la vista previa. */
   maskEdit: string | null;
+  /** Herramienta automática trabajando ("plays", "silences", "beats"). */
+  autoBusy: string | null;
+  /** Silencios encontrados (para ese estado del proyecto), a la vista antes de cortarlos. */
+  silencePreview: { project: Project; intervals: [number, number][] } | null;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -159,6 +163,8 @@ export const initialState: EditorState = {
   sourceMedia: null,
   eyedropper: null,
   maskEdit: null,
+  autoBusy: null,
+  silencePreview: null,
   toasts: [],
   focused: true,
   confirm: null,
