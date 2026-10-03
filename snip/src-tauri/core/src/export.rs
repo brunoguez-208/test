@@ -241,15 +241,39 @@ pub fn build_args(req: &ExportRequest, info: &MediaInfo, plan: &ExportPlan, outp
 /// Argumentos para generar el proxy de preview 720p (cuando WebView2 no puede
 /// reproducir el original, típicamente HEVC). Mantiene los tiempos del original.
 pub fn proxy_args(input: &str, output: &Path, encoder: Encoder) -> Vec<String> {
+    proxy_args_with(input, output, encoder, &ProxyMedia::default())
+}
+
+/// Lo que el proxy tiene que corregir del original para que el preview
+/// coincida con la exportación: pistas de audio a mezclar y HDR → SDR.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProxyMedia {
+    /// Pistas a mezclar (vacío o una = `0:a:N?` directo).
+    pub tracks: Vec<u32>,
+    /// Transferencia HDR del original ("smpte2084"/"arib-std-b67").
+    pub transfer: Option<String>,
+}
+
+pub fn proxy_args_with(input: &str, output: &Path, encoder: Encoder, pm: &ProxyMedia) -> Vec<String> {
     let mut a: Vec<String> = vec![s("-hide_banner"), s("-nostdin"), s("-loglevel"), s("error"), s("-y"), s("-i"), s(input)];
-    a.extend([s("-map"), s("0:v:0"), s("-map"), s("0:a:0?")]);
-    a.extend([
-        s("-vf"),
-        format!(
-            "scale=w='if(gte(iw,ih),-2,min(720,iw))':h='if(gte(iw,ih),min(720,ih),-2)':flags=bilinear,format={}",
-            encoder.pix_fmt()
-        ),
-    ]);
+    let mut vf = vec![];
+    if let Some(t) = pm.transfer.as_deref().filter(|t| matches!(*t, "smpte2084" | "arib-std-b67")) {
+        let m = crate::project::MediaRef { transfer: Some(t.to_string()), ..crate::project::MediaRef::placeholder() };
+        vf.extend(crate::filters::hdr_to_sdr(&m));
+    }
+    vf.push(format!(
+        "scale=w='if(gte(iw,ih),-2,min(720,iw))':h='if(gte(iw,ih),min(720,ih),-2)':flags=bilinear,format={}",
+        encoder.pix_fmt()
+    ));
+    a.extend([s("-map"), s("0:v:0")]);
+    if pm.tracks.len() > 1 {
+        let (ins, mix) = crate::heavy::mix_inputs(0, &pm.tracks);
+        let ins: String = ins.iter().map(|i| format!("[{i}]")).collect();
+        a.extend([s("-filter_complex"), format!("{ins}{}[pa]", mix.unwrap_or_default()), s("-map"), s("[pa]")]);
+    } else {
+        a.extend([s("-map"), format!("0:a:{}?", pm.tracks.first().copied().unwrap_or(0))]);
+    }
+    a.extend([s("-vf"), vf.join(",")]);
     a.extend(encoder.proxy_args());
     a.extend([s("-g"), s("15"), s("-c:a"), s("aac"), s("-b:a"), s("160k"), s("-ac"), s("2")]);
     a.extend([
@@ -328,6 +352,11 @@ mod tests {
             audio_codec: audio.map(Into::into),
             size_bytes: None,
             bit_rate: None,
+            audio_tracks: audio.is_some() as u32,
+            hdr: false,
+            color_transfer: None,
+            bit_depth: 8,
+            vfr: false,
         }
     }
 
@@ -508,6 +537,17 @@ mod tests {
         assert!(a.contains("-c:v libx264 -preset ultrafast"));
         assert!(a.contains("min(720,ih)"));
         assert!(a.contains("-progress pipe:1"));
+        assert!(a.contains("-map 0:v:0 -map 0:a:0?"));
+        // ShadowPlay HDR con dos pistas: mezcla y tonemap.
+        let pm = ProxyMedia { tracks: vec![0, 1], transfer: Some("smpte2084".into()) };
+        let a = proxy_args_with("in.mp4", Path::new("p.mp4"), Encoder::Nvenc, &pm).join(" ");
+        assert!(a.contains("[0:a:0][0:a:1]amix=inputs=2:duration=longest:normalize=0[pa] -map [pa]"), "{a}");
+        assert!(a.contains("zscale=tin=smpte2084"), "{a}");
+        assert!(a.contains("tonemap=tonemap=hable"));
+        // Una pista elegida: solo esa.
+        let pm = ProxyMedia { tracks: vec![1], transfer: None };
+        let a = proxy_args_with("in.mp4", Path::new("p.mp4"), Encoder::Libx264, &pm).join(" ");
+        assert!(a.contains("-map 0:a:1?") && !a.contains("zscale"), "{a}");
         let t = thumbnail_args("in.mp4", 12.5, 90).join(" ");
         assert!(t.starts_with("-hide_banner -nostdin -loglevel error -ss 12.500000 -i in.mp4 -frames:v 1"), "{t}");
         assert!(!t.contains("fps="), "no se usa el filtro fps (decodificaría todo)");

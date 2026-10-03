@@ -224,9 +224,19 @@ pub fn prepare_intermediates(
         let media = p.media(&c.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
         let base = 100.0 * n as f64 / heavy.len() as f64;
         let span = 100.0 / heavy.len() as f64;
-        let inter = heavy::process_clip(env.tools, media, c, &p.canvas.fps_expr(), p.canvas.fps(), env.encoder, env.heavy_dir, ctl, |pct| {
-            on_progress(base + span * pct / 100.0)
-        })?;
+        let run = |encoder: Encoder, on_progress: &mut dyn FnMut(f64)| {
+            heavy::process_clip(env.tools, media, c, &p.canvas.fps_expr(), p.canvas.fps(), encoder, env.heavy_dir, ctl, |pct| {
+                on_progress(base + span * pct / 100.0)
+            })
+        };
+        let inter = match run(env.encoder, &mut on_progress) {
+            // Con el encoder por hardware cualquier falla se reintenta con x264.
+            Err(e) if env.encoder.is_hardware() && e.retry_on_cpu() => {
+                crate::log::warn(&format!("etapa pesada con {} falló, reintento con libx264: {}", env.encoder.ffmpeg_name(), e.log_line()));
+                run(Encoder::Libx264, &mut on_progress)?
+            }
+            r => r?,
+        };
         intermediates.insert(c.id.clone(), inter);
     }
     Ok(intermediates)
@@ -357,8 +367,15 @@ pub fn export_project(
                     size_retries: retries,
                 });
             }
-            Err(e) if e.kind == ErrorKind::EncoderFailed && encoder != Encoder::Libx264 => {
-                on_encoder_failed(encoder);
+            // Fallback obligatorio: si el encoder por hardware falla por lo que
+            // sea (driver, formato, fps, tamaño), se reintenta con libx264.
+            Err(e) if encoder != Encoder::Libx264 && e.retry_on_cpu() => {
+                crate::log::warn(&format!("exportación con {} falló, reintento con libx264: {}", encoder.ffmpeg_name(), e.log_line()));
+                // Solo una falla del encoder en sí (driver, sesión) lo descarta
+                // por el resto de la sesión; lo demás es de este proyecto.
+                if e.kind == ErrorKind::EncoderFailed {
+                    on_encoder_failed(encoder);
+                }
                 encoder = Encoder::Libx264;
                 fell_back = true;
             }

@@ -18,6 +18,8 @@ pub fn media(id: &str, path: &str, dur: f64, w: u32, h: u32, fps: u32, audio: bo
         audio_codec: audio.then(|| "aac".into()),
         rotation: 0,
         size_bytes: None,
+        audio_tracks: audio as u32,
+        transfer: None,
     }
 }
 

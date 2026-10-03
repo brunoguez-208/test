@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
 import {
   ArrowDown16Regular,
   ArrowUp16Regular,
@@ -16,6 +15,7 @@ import { basename, formatBytes } from "../lib/files";
 import type { QueueItem, Stage } from "../lib/types";
 import { ProgressBar, ProgressRing } from "./ui/Progress";
 import { Button, IconButton } from "./ui/Button";
+import { ErrorDetails } from "./ErrorDetails";
 
 const STAGE: Record<Stage, string> = {
   preparing: "Procesando efectos",
@@ -35,7 +35,7 @@ function eta(secs: number | null | undefined): string {
 
 function Row({ it, queuedIndex, queuedCount }: { it: QueueItem; queuedIndex: number; queuedCount: number }) {
   const s = it.status;
-  const [details, setDetails] = useState(false);
+
   return (
     <motion.li
       layout
@@ -88,11 +88,8 @@ function Row({ it, queuedIndex, queuedCount }: { it: QueueItem; queuedIndex: num
       </div>
       {s.state === "running" && <ProgressBar value={s.progress?.percent ?? 0} testId="queue-progress" />}
       {s.state === "failed" && s.error.detail && (
-        <div className="pl-7">
-          <button type="button" className="t-caption flex items-center gap-1 text-[var(--accent-text)]" onClick={() => setDetails((v) => !v)} data-testid="queue-details">
-            {details ? "Ocultar detalles" : "Ver detalles"}
-          </button>
-          {details && <pre className="t-caption mt-1.5 max-h-28 select-text overflow-auto whitespace-pre-wrap rounded-[4px] bg-black/20 p-2 font-mono text-[11px]">{s.error.detail}</pre>}
+        <div className="pl-7" data-testid="queue-details">
+          <ErrorDetails detail={s.error.detail} />
         </div>
       )}
       {s.state === "done" && (

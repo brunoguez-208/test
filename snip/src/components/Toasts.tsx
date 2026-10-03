@@ -1,16 +1,55 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { ErrorDetails } from "./ErrorDetails";
 import { dismissToast, useEditor, type Toast } from "../store/editor";
 import { InfoBar } from "./ui/InfoBar";
 import { Button } from "./ui/Button";
 
-function AutoDismiss({ toast }: { toast: Toast }) {
+function AutoDismiss({ toast, paused }: { toast: Toast; paused: boolean }) {
   useEffect(() => {
-    const ms = toast.action ? 9000 : toast.severity === "critical" ? 9000 : 5000;
+    if (paused) return;
+    const ms = toast.detail ? 15000 : toast.action ? 9000 : toast.severity === "critical" ? 9000 : 5000;
     const t = window.setTimeout(() => dismissToast(toast.id), ms);
     return () => window.clearTimeout(t);
-  }, [toast]);
+  }, [toast, paused]);
   return null;
+}
+
+function ToastItem({ t }: { t: Toast }) {
+  // Con los detalles abiertos no se cierra solo (el usuario está leyendo o copiando).
+  const [reading, setReading] = useState(false);
+  return (
+    <>
+      <AutoDismiss toast={t} paused={reading} />
+      <InfoBar
+        severity={t.severity}
+        title={t.title}
+        message={t.message}
+        onClose={() => dismissToast(t.id)}
+        className="floating"
+        testId={`toast-${t.severity}`}
+        action={
+          (t.action || t.detail) && (
+            <div className="flex flex-col gap-2">
+              {t.action && (
+                <Button
+                  className="!h-7 self-start"
+                  onClick={() => {
+                    t.action!.run();
+                    dismissToast(t.id);
+                  }}
+                  data-testid="toast-action"
+                >
+                  {t.action.label}
+                </Button>
+              )}
+              {t.detail && <ErrorDetails detail={t.detail} onOpen={setReading} />}
+            </div>
+          )
+        }
+      />
+    </>
+  );
 }
 
 /** Avisos tipo InfoBar flotantes, arriba al centro. */
@@ -29,29 +68,7 @@ export function Toasts() {
             exit={{ opacity: 0, y: -8, transition: { duration: 0.15 } }}
             transition={{ type: "spring", stiffness: 500, damping: 36 }}
           >
-            <AutoDismiss toast={t} />
-            <InfoBar
-              severity={t.severity}
-              title={t.title}
-              message={t.message}
-              onClose={() => dismissToast(t.id)}
-              className="floating"
-              testId={`toast-${t.severity}`}
-              action={
-                t.action && (
-                  <Button
-                    className="!h-7"
-                    onClick={() => {
-                      t.action!.run();
-                      dismissToast(t.id);
-                    }}
-                    data-testid="toast-action"
-                  >
-                    {t.action.label}
-                  </Button>
-                )
-              }
-            />
+            <ToastItem t={t} />
           </motion.div>
         ))}
       </AnimatePresence>

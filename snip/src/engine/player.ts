@@ -20,7 +20,7 @@ export interface ClipSource {
 
 export interface SourceResolver {
   clipSource(clip: Clip, media: MediaRef): ClipSource | null;
-  mediaUrl(media: MediaRef): string | null;
+  mediaUrl(media: MediaRef, track?: number | null): string | null;
   /** Picos de la forma de onda (100 por segundo) si ya se cargaron. */
   peaks(media: MediaRef): Uint8Array | null;
 }

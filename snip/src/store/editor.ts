@@ -23,6 +23,8 @@ export interface Toast {
   title: string;
   message?: string;
   action?: { label: string; run: () => void };
+  /** Texto técnico (FFmpeg) para "Ver detalles" y "Copiar". */
+  detail?: string | null;
 }
 
 export interface Tab {

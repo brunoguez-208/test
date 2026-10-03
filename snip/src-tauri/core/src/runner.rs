@@ -51,6 +51,7 @@ pub fn run_capture(program: &Path, args: &[String]) -> Result<Vec<u8>, AppError>
         Ok(out.stdout)
     } else {
         let err = String::from_utf8_lossy(&out.stderr).into_owned();
+        crate::log::error(&format!("{} falló: {}", program.display(), err.trim()));
         Err(AppError::with_detail(classify_ffmpeg_stderr(&err), err))
     }
 }
@@ -111,6 +112,14 @@ fn drain_stderr(stderr: impl Read + Send + 'static) -> std::thread::JoinHandle<S
     })
 }
 
+/// Argumentos como se escribirían en una consola (para el log).
+pub fn quote_args(args: &[String]) -> String {
+    args.iter()
+        .map(|a| if a.is_empty() || a.contains([' ', ';', '[', '"']) { format!("\"{}\"", a.replace('"', "\\\"")) } else { a.clone() })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Corre FFmpeg (opcionalmente en `cwd`) reportando el progreso de `-progress pipe:1`.
 /// Devuelve el stderr si terminó bien; si falla o se cancela, el error ya clasificado.
 pub fn run_ffmpeg(
@@ -160,6 +169,7 @@ pub fn run_ffmpeg(
         return Err(AppError::new(ErrorKind::Cancelled));
     }
     if !status.success() {
+        crate::log::error(&format!("ffmpeg falló ({status})\n  comando: ffmpeg {}\n  stderr: {}", quote_args(args), stderr_text.trim().replace('\n', "\n          ")));
         return Err(AppError::with_detail(classify_ffmpeg_stderr(&stderr_text), stderr_text));
     }
     Ok(stderr_text)

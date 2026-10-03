@@ -11,6 +11,7 @@ pub mod fast;
 pub mod filters;
 pub mod graph;
 pub mod heavy;
+pub mod log;
 pub mod migrate;
 pub mod naming;
 pub mod probe;
@@ -76,6 +77,8 @@ pub fn probe_media(tools: &Tools, path: &Path, id: &str) -> Result<project::Medi
             audio_codec: m.audio_codec,
             rotation: m.rotation,
             size_bytes: m.size_bytes,
+            audio_tracks: m.audio_tracks,
+            transfer: m.color_transfer.filter(|_| m.hdr),
         });
     }
     let out = runner::run_capture(&tools.ffprobe, &probe::probe_args(&p))?;
@@ -95,6 +98,8 @@ pub fn probe_media(tools: &Tools, path: &Path, id: &str) -> Result<project::Medi
         audio_codec: None,
         rotation: 0,
         size_bytes: None,
+        audio_tracks: 0,
+        transfer: None,
     };
     if naming::is_audio(path) {
         let a = probe::parse_audio_probe(&json)?;
@@ -193,10 +198,9 @@ pub fn export(
                 });
             }
             Err(e)
-                if e.kind == ErrorKind::EncoderFailed
-                    && plan.mode == ExportMode::Precise
-                    && enc != Encoder::Libx264 =>
+                if e.retry_on_cpu() && plan.mode == ExportMode::Precise && enc != Encoder::Libx264 =>
             {
+                log::warn(&format!("exportación con {} falló, reintento con libx264: {}", enc.ffmpeg_name(), e.log_line()));
                 on_encoder_failed(enc);
                 enc = Encoder::Libx264;
                 fell_back = true;
@@ -262,6 +266,8 @@ pub struct ProxySpec<'a> {
     pub output: &'a Path,
     pub duration: f64,
     pub fps: f64,
+    /// Mezcla de pistas y HDR → SDR (para que el preview coincida con la exportación).
+    pub media: export::ProxyMedia,
 }
 
 /// Genera el proxy de preview. Devuelve la ruta del proxy.
@@ -279,13 +285,13 @@ pub fn make_proxy(
     let partial = naming::partial_path(output);
     let mut enc = encoder;
     loop {
-        let args = export::proxy_args(&spec.input.to_string_lossy(), &partial, enc);
+        let args = export::proxy_args_with(&spec.input.to_string_lossy(), &partial, enc, &spec.media);
         let mut emit = progress::monotonic(&mut on_progress);
         match runner::run_ffmpeg_to_file(tools, &args, &partial, output, job, |s| {
             emit(progress::report(&s, spec.duration, spec.fps))
         }) {
             Ok(()) => return Ok(output.to_path_buf()),
-            Err(e) if e.kind == ErrorKind::EncoderFailed && enc != Encoder::Libx264 => enc = Encoder::Libx264,
+            Err(e) if e.retry_on_cpu() && enc != Encoder::Libx264 => enc = Encoder::Libx264,
             Err(e) => return Err(e),
         }
     }

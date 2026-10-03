@@ -91,7 +91,7 @@ impl AppError {
 
     pub fn with_detail(kind: ErrorKind, detail: impl Into<String>) -> Self {
         let detail = detail.into();
-        let detail = if detail.trim().is_empty() { None } else { Some(tail(&detail, 1500)) };
+        let detail = if detail.trim().is_empty() { None } else { Some(tail(&detail, 4000)) };
         Self { kind, message: kind.default_message().to_string(), detail }
     }
 
@@ -109,6 +109,32 @@ impl AppError {
             _ => ErrorKind::Unknown,
         };
         Self::with_detail(kind, err.to_string())
+    }
+
+    /// ¿Vale la pena reintentar con libx264? Todo lo que no sea culpa del
+    /// usuario o del disco (cancelar, sin espacio, sin permiso, archivo que falta).
+    pub fn retry_on_cpu(&self) -> bool {
+        !matches!(
+            self.kind,
+            ErrorKind::Cancelled
+                | ErrorKind::DiskFull
+                | ErrorKind::PermissionDenied
+                | ErrorKind::NotFound
+                | ErrorKind::MediaMissing
+                | ErrorKind::SameAsInput
+                | ErrorKind::UpscaleNotConfirmed
+                | ErrorKind::FpsIncreaseNotConfirmed
+                | ErrorKind::FfmpegMissing
+                | ErrorKind::Busy
+        )
+    }
+
+    /// Una línea para el log (tipo, mensaje y detalle técnico).
+    pub fn log_line(&self) -> String {
+        match &self.detail {
+            Some(d) => format!("{:?}: {} | {}", self.kind, self.message, d.replace('\n', " ⏎ ")),
+            None => format!("{:?}: {}", self.kind, self.message),
+        }
     }
 }
 
@@ -213,6 +239,6 @@ mod tests {
     fn long_detail_is_trimmed_to_the_tail() {
         let long = "á".repeat(5000);
         let e = AppError::with_detail(ErrorKind::Unknown, long);
-        assert!(e.detail.unwrap().chars().count() <= 1502);
+        assert!(e.detail.unwrap().chars().count() <= 4002);
     }
 }

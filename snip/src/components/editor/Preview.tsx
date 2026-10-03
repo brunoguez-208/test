@@ -6,7 +6,7 @@ import { activeAt, layout } from "../../project/timeline";
 import { heavyReason, needsHeavy } from "../../project/heavy";
 import { basename } from "../../lib/files";
 import { activeTab, useEditor } from "../../store/editor";
-import { addVideosWithDialog, player, relinkMedia } from "../../store/controller";
+import { addVideosWithDialog, player, proxyNeed, relinkMedia } from "../../store/controller";
 import { Button } from "../ui/Button";
 import { ProgressRing } from "../ui/Progress";
 import { Tooltip } from "../ui/Tooltip";
@@ -75,6 +75,9 @@ export function Preview({ project }: { project: Project }) {
   const h = clip && needsHeavy(clip) ? heavy[clip.id] : undefined;
   const preparing = h?.status === "pending";
   const proxy = media ? proxies[media.path] : undefined;
+  // Grabaciones con varias pistas o HDR: proxy que mezcla/convierte (no bloquea el preview).
+  const need = media && clip ? proxyNeed(media, clip.audio.track) : null;
+  const mix = need ? proxies[need.key] : undefined;
   const empty = project.clips.length === 0;
 
   return (
@@ -155,10 +158,27 @@ export function Preview({ project }: { project: Project }) {
                 Preparando vista previa · {heavyReason(clip)} {Math.round(h!.status === "pending" ? h!.percent : 0)}%
               </motion.span>
             )}
-            {proxy?.status === "ready" && (
+            {mix?.status === "pending" && !preparing && (
+              <motion.span
+                key="mix"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="proxy-chip t-caption inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+                data-testid="mix-chip"
+              >
+                <ProgressRing size={12} stroke={1.5} className="!text-white" />
+                {need!.transfer ? "Convirtiendo HDR" : "Mezclando pistas de audio"} {Math.round(mix.percent)}%
+              </motion.span>
+            )}
+            {(proxy?.status === "ready" || mix?.status === "ready") && (
               <motion.span key="proxy-chip" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="pointer-events-auto">
                 <Tooltip
-                  content="Tu equipo no reproduce este códec en la app, así que mostramos una copia 720p. La exportación siempre usa el archivo original, con su calidad completa."
+                  content={
+                    mix?.status === "ready"
+                      ? "Mostramos una copia 720p con las pistas de audio mezcladas (y el HDR convertido) tal como va a salir. La exportación usa el archivo original, con su calidad completa."
+                      : "Tu equipo no reproduce este códec en la app, así que mostramos una copia 720p. La exportación siempre usa el archivo original, con su calidad completa."
+                  }
                   placement="bottom"
                 >
                   <span className="proxy-chip t-caption inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" data-testid="proxy-chip" tabIndex={0}>

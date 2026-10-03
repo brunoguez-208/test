@@ -28,6 +28,24 @@ pub struct MediaInfo {
     pub audio_codec: Option<String>,
     pub size_bytes: Option<u64>,
     pub bit_rate: Option<u64>,
+    /// Cantidad de pistas de audio (ShadowPlay graba 2: juego y micrófono).
+    #[serde(default)]
+    pub audio_tracks: u32,
+    /// Video HDR (PQ o HLG): se lleva a SDR antes de codificar.
+    #[serde(default)]
+    pub hdr: bool,
+    #[serde(default)]
+    pub color_transfer: Option<String>,
+    /// Bits por componente (8, 10, 12).
+    #[serde(default = "eight")]
+    pub bit_depth: u32,
+    /// Cuadros por segundo variables (avg y r_frame_rate no coinciden).
+    #[serde(default)]
+    pub vfr: bool,
+}
+
+fn eight() -> u32 {
+    8
 }
 
 impl MediaInfo {
@@ -90,6 +108,8 @@ struct StreamJson {
     avg_frame_rate: Option<String>,
     duration: Option<String>,
     nb_frames: Option<String>,
+    color_transfer: Option<String>,
+    bits_per_raw_sample: Option<String>,
     #[serde(default)]
     side_data_list: Vec<serde_json::Value>,
     #[serde(default)]
@@ -124,6 +144,73 @@ fn gcd(a: u64, b: u64) -> u64 {
 fn sane_fps(r: (u32, u32)) -> bool {
     let f = r.0 as f64 / r.1 as f64;
     (1.0..=1000.0).contains(&f)
+}
+
+/// Frecuencias habituales: las grabaciones VFR (ShadowPlay, OBS, celulares)
+/// reportan promedios raros como 1300000/21667 o 90000/1; se llevan a la más
+/// cercana para que el lienzo y los encoders por hardware reciban algo normal.
+const STANDARD_FPS: [(u32, u32); 18] = [
+    (24000, 1001),
+    (24, 1),
+    (25, 1),
+    (30000, 1001),
+    (30, 1),
+    (48, 1),
+    (50, 1),
+    (60000, 1001),
+    (60, 1),
+    (72, 1),
+    (90, 1),
+    (100, 1),
+    (120000, 1001),
+    (120, 1),
+    (144, 1),
+    (165, 1),
+    (200, 1),
+    (240, 1),
+];
+
+/// Máximo de fps de salida: más que esto no tiene sentido y rompe NVENC.
+pub const MAX_FPS: u32 = 240;
+
+/// Normaliza unos fps a una fracción "razonable": la estándar más cercana
+/// (±1,5 %), si no un entero (tope 240). Fracciones inválidas → 30.
+pub fn standard_fps(num: u32, den: u32) -> (u32, u32) {
+    if num == 0 || den == 0 {
+        return (30, 1);
+    }
+    let f = num as f64 / den as f64;
+    if !f.is_finite() || f < 1.0 {
+        return (30, 1);
+    }
+    if f > MAX_FPS as f64 * 1.015 {
+        return (MAX_FPS, 1);
+    }
+    let best = STANDARD_FPS
+        .iter()
+        .map(|&(n, d)| ((n, d), ((n as f64 / d as f64) - f).abs() / f))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .unwrap();
+    if best.1 <= 0.015 {
+        return best.0;
+    }
+    if den == 1 && num <= MAX_FPS {
+        return (num, 1);
+    }
+    ((f.round() as u32).clamp(1, MAX_FPS), 1)
+}
+
+fn bit_depth(s: &StreamJson) -> u32 {
+    if let Some(b) = parse_u64(&s.bits_per_raw_sample).filter(|b| (8..=16).contains(b)) {
+        return b as u32;
+    }
+    let pf = s.pix_fmt.as_deref().unwrap_or("");
+    for (tag, bits) in [("p16", 16), ("p14", 14), ("p12", 12), ("p010", 10), ("p10", 10), ("10le", 10), ("10be", 10), ("12le", 12)] {
+        if pf.contains(tag) {
+            return bits;
+        }
+    }
+    8
 }
 
 fn normalize_rotation(deg: f64) -> u32 {
@@ -181,10 +268,30 @@ pub fn parse_probe(json: &str, path: &str) -> Result<MediaInfo, AppError> {
         .filter(|d| *d > 0.0)
         .ok_or_else(|| AppError::with_detail(ErrorKind::Corrupt, "duración desconocida"))?;
 
+    // avg_frame_rate es el real en VFR; r_frame_rate puede ser la base de
+    // tiempo (90000/1). Si falta, cuadros / duración; recién después r.
     let avg = video.avg_frame_rate.as_deref().and_then(parse_rate).filter(|r| sane_fps(*r));
     let real = video.r_frame_rate.as_deref().and_then(parse_rate).filter(|r| sane_fps(*r));
-    let (fps_num, fps_den) = avg.or(real).unwrap_or((30, 1));
+    let counted = parse_u64(&video.nb_frames)
+        .filter(|n| *n > 1)
+        .and_then(|n| parse_rate(&format!("{:.3}", n as f64 / duration)))
+        .filter(|r| sane_fps(*r));
+    let as_f = |r: (u32, u32)| r.0 as f64 / r.1 as f64;
+    // VFR con cuadros salteados (ShadowPlay baja a 58,7 de promedio grabando a
+    // 60): si la nominal es razonable y apenas mayor, se usa la nominal.
+    let nominal = match (avg, real) {
+        (Some(a), Some(r)) if as_f(r) >= as_f(a) && as_f(r) <= as_f(a) * 1.1 && as_f(r) <= MAX_FPS as f64 => Some(r),
+        _ => None,
+    };
+    let raw = nominal.or(avg).or(counted).or(real).unwrap_or((30, 1));
+    let (fps_num, fps_den) = standard_fps(raw.0, raw.1);
     let fps = fps_num as f64 / fps_den as f64;
+    let vfr = match (avg, video.r_frame_rate.as_deref().and_then(parse_rate)) {
+        (Some(a), Some(r)) => ((a.0 as f64 / a.1 as f64) - (r.0 as f64 / r.1 as f64)).abs() > 0.01 * fps,
+        _ => false,
+    };
+    let audio_tracks = probe.streams.iter().filter(|s| s.codec_type.as_deref() == Some("audio")).count() as u32;
+    let hdr = matches!(video.color_transfer.as_deref(), Some("smpte2084" | "arib-std-b67"));
 
     let rotation = stream_rotation(video);
     let (width, height) = if rotation % 180 == 90 {
@@ -215,6 +322,11 @@ pub fn parse_probe(json: &str, path: &str) -> Result<MediaInfo, AppError> {
         audio_codec: audio.and_then(|a| a.codec_name.clone()),
         size_bytes: parse_u64(&format.size),
         bit_rate: parse_u64(&format.bit_rate),
+        audio_tracks,
+        hdr,
+        color_transfer: video.color_transfer.clone(),
+        bit_depth: bit_depth(video),
+        vfr,
     })
 }
 
@@ -299,6 +411,55 @@ mod tests {
                  "duration":"12.010000","size":"25000000","bit_rate":"16653000"}
     }"#;
 
+    /// Grabación de ShadowPlay / Instant Replay: HEVC 10 bits HDR, VFR con
+    /// r_frame_rate = base de tiempo (90000/1) y dos pistas de audio.
+    const SHADOWPLAY: &str = r#"{
+      "streams": [
+        {"index":0,"codec_name":"hevc","codec_type":"video","width":3840,"height":2160,
+         "pix_fmt":"yuv420p10le","color_transfer":"smpte2084","r_frame_rate":"90000/1",
+         "avg_frame_rate":"7650000/63751","duration":"20.0","nb_frames":"2399"},
+        {"index":1,"codec_name":"aac","codec_type":"audio"},
+        {"index":2,"codec_name":"aac","codec_type":"audio"}
+      ],
+      "format": {"duration":"20.000000","size":"300000000"}
+    }"#;
+
+    #[test]
+    fn shadowplay_vfr_hdr_two_tracks() {
+        let m = parse_probe(SHADOWPLAY, "C:\\Videos\\Desktop 2026.10.03 - 04.28.16.07.mp4").unwrap();
+        assert_eq!((m.fps_num, m.fps_den), (120, 1), "120,0 promedio");
+        assert!(m.vfr);
+        assert!(m.hdr);
+        assert_eq!(m.bit_depth, 10);
+        assert_eq!(m.audio_tracks, 2);
+    }
+
+    #[test]
+    fn timebase_only_rate_uses_frame_count() {
+        // Sin avg_frame_rate y r = 90000/1 (descartado): cuadros / duración.
+        let j = r#"{"streams":[{"codec_type":"video","codec_name":"h264","width":1920,"height":1080,
+          "r_frame_rate":"90000/1","avg_frame_rate":"0/0","nb_frames":"1440"}],"format":{"duration":"24.0"}}"#;
+        let m = parse_probe(j, "x.mp4").unwrap();
+        assert_eq!((m.fps_num, m.fps_den), (60, 1));
+        // Ni siquiera cuadros: 30.
+        let j = r#"{"streams":[{"codec_type":"video","codec_name":"h264","width":1920,"height":1080,
+          "r_frame_rate":"90000/1"}],"format":{"duration":"24.0"}}"#;
+        assert_eq!(parse_probe(j, "x.mp4").unwrap().fps_num, 30);
+    }
+
+    #[test]
+    fn standard_fps_snaps_odd_rates() {
+        assert_eq!(standard_fps(1300000, 21667), (60, 1));
+        assert_eq!(standard_fps(30000, 1001), (30000, 1001));
+        assert_eq!(standard_fps(2997, 100), (30000, 1001));
+        assert_eq!(standard_fps(143_900, 1000), (144, 1));
+        assert_eq!(standard_fps(90000, 1), (240, 1));
+        assert_eq!(standard_fps(37, 1), (37, 1));
+        assert_eq!(standard_fps(3733, 100), (37, 1));
+        assert_eq!(standard_fps(0, 0), (30, 1));
+        assert_eq!(standard_fps(1, 2), (30, 1));
+    }
+
     #[test]
     fn parses_rotated_hevc_with_audio() {
         let m = parse_probe(PHONE_HEVC, "C:\\v\\x.mp4").unwrap();
@@ -307,7 +468,9 @@ mod tests {
         assert_eq!(m.rotation, 270);
         assert_eq!((m.width, m.height), (1080, 1920));
         assert_eq!((m.coded_width, m.coded_height), (1920, 1080));
-        assert!((m.fps - 59.97).abs() < 0.01, "fps {}", m.fps);
+        // 59,97 promedio de un celular → 60 estándar.
+        assert_eq!((m.fps_num, m.fps_den), (60, 1));
+        assert_eq!(m.bit_depth, 10);
         assert!((m.duration - 12.01).abs() < 1e-9);
         assert_eq!(m.frame_count, 719);
         assert!(m.has_audio);

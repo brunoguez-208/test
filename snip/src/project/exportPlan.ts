@@ -26,6 +26,8 @@ export function isFastEligible(p: Project, st: ExportSettings = p.export): boole
   if (!m || m.kind !== "video") return false;
   if (p.canvas.width !== m.width - (m.width % 2) || p.canvas.height !== m.height - (m.height % 2)) return false;
   if (Math.abs(canvasFps(p.canvas) - m.fps) > 0.01 || !copyCompatible(st.format, m)) return false;
+  // Varias pistas de audio (ShadowPlay): se mezclan, no se copian.
+  if ((m.audioTracks ?? 1) > 1) return false;
   let lastOut = -1;
   for (const c of p.clips) {
     const plain =

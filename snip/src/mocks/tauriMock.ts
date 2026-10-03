@@ -45,6 +45,9 @@ function mediaFor(path: string, id: string): MediaRef {
     audioCodec: /mudo/i.test(path) ? null : "aac",
     rotation: 0,
     sizeBytes: 48_000_000,
+    // Grabaciones de ShadowPlay ("Desktop 2026.10.03 - 04.28.16.07.mp4"): juego + micrófono.
+    audioTracks: /^(desktop|replay) \d{4}\./i.test(path.split(/[\\/]/).pop() ?? "") ? 2 : 1,
+    transfer: /hdr/i.test(path) ? "smpte2084" : null,
   };
 }
 
@@ -314,8 +317,9 @@ export function installTauriMock() {
         case "analyze_loudness":
           return { inputI: -23.4, inputTp: -6.1, inputLra: 5.2, inputThresh: -33.9, targetOffset: 0.1 };
         case "create_preview_proxy": {
+          const step = Number(params.get("proxyMs") ?? 300) / 5;
           for (let p = 0; p <= 100; p += 20) {
-            await new Promise((r) => setTimeout(r, 60));
+            await new Promise((r) => setTimeout(r, step));
             await emit("proxy-progress", { path: a.path, percent: p });
           }
           return "C:\\Users\\Bruno\\AppData\\Local\\Snip\\proxies\\proxy.mp4";
@@ -491,6 +495,8 @@ export function installTauriMock() {
         case "reveal_in_folder":
         case "open_in_default_app":
           return null;
+        case "reveal_log":
+          return "C:\\Users\\demo\\AppData\\Roaming\\com.snip.app\\logs\\snip.log";
         case "plugin:dialog|open": {
           const opts = (a.options ?? {}) as { multiple?: boolean };
           const paths = state.dialogOpenPaths;

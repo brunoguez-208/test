@@ -196,20 +196,30 @@ struct ProxyProgress {
 
 /// Proxy 720p H.264 para cuando WebView2 no puede reproducir el original (HEVC).
 #[tauri::command]
-pub async fn create_preview_proxy(app: AppHandle, state: State<'_, AppState>, path: String, duration: f64, fps: f64) -> CmdResult<String> {
+#[allow(clippy::too_many_arguments)]
+pub async fn create_preview_proxy(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    duration: f64,
+    fps: f64,
+    tracks: Option<Vec<u32>>,
+    transfer: Option<String>,
+) -> CmdResult<String> {
     let job = JobControl::new();
     if let Ok(mut g) = state.proxy_job.lock() {
         if let Some(prev) = g.replace(job.clone()) {
             prev.cancel();
         }
     }
-    let output = state.proxy_path_for(Path::new(&path));
+    let media = snip_core::export::ProxyMedia { tracks: tracks.unwrap_or_default(), transfer };
+    let output = state.proxy_path_for(Path::new(&path), &format!("{:?}|{:?}", media.tracks, media.transfer));
     let app2 = app.clone();
     let src = path.clone();
     let out = blocking(move || {
         let state = app2.state::<AppState>();
         let encoder = state.encoder();
-        let spec = snip_core::ProxySpec { input: Path::new(&src), output: &output, duration, fps };
+        let spec = snip_core::ProxySpec { input: Path::new(&src), output: &output, duration, fps, media };
         snip_core::make_proxy(&state.tools, &spec, encoder, &job, |r: ProgressReport| {
             let _ = app2.emit("proxy-progress", ProxyProgress { path: src.clone(), percent: r.percent });
         })
@@ -665,6 +675,17 @@ pub async fn write_subtitles(path: String, text: String) -> CmdResult<String> {
 #[tauri::command]
 pub fn files_exist(paths: Vec<String>) -> Vec<bool> {
     paths.iter().map(|p| Path::new(p).is_file()).collect()
+}
+
+/// Muestra el log de la app en el Explorador (para mandar en un reporte).
+#[tauri::command]
+pub fn reveal_log() -> CmdResult<String> {
+    let p = snip_core::log::path().ok_or_else(|| AppError::new(ErrorKind::NotFound))?;
+    if !p.is_file() {
+        snip_core::log::info("log creado");
+    }
+    crate::system::reveal_in_folder(&p)?;
+    Ok(p.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

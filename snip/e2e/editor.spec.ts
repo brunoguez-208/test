@@ -350,9 +350,18 @@ test("error de exportación: mensaje claro y detalles", async ({ page }) => {
   await expect(item).toHaveAttribute("data-state", "failed", { timeout: 10_000 });
   await expect(item).toContainText("No hay espacio suficiente");
   await expect(item).not.toContainText("av_interleaved");
-  await item.getByTestId("queue-details").click();
+  await item.getByTestId("error-details-toggle").click();
   await expect(item).toContainText("No space left on device");
-  await expect(page.getByTestId("toast-critical")).toContainText("No se pudo exportar");
+  // "Copiar" deja el error real de FFmpeg en el portapapeles.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await item.getByTestId("error-details-copy").click();
+  await expect(item.getByTestId("error-details-copy")).toHaveText("Copiado");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("No space left on device");
+  // El aviso flotante también tiene "Ver detalles".
+  const toast = page.getByTestId("toast-critical");
+  await expect(toast).toContainText("No se pudo exportar");
+  await toast.getByTestId("error-details-toggle").click();
+  await expect(toast.getByTestId("error-details-text")).toContainText("No space left on device");
 });
 
 test("proyectos: autoguardado, sin terminar, cerrar con cambios, retomar y descartar", async ({ page }) => {

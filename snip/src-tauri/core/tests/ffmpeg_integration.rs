@@ -453,7 +453,7 @@ fn hevc_preview_proxy_is_h264_720p_with_same_duration() {
     let info = probe(&f("hevc_aac.mp4"));
     let mut last = 0.0;
     let src = f("hevc_aac.mp4");
-    let spec = snip_core::ProxySpec { input: &src, output: &out, duration: info.duration, fps: info.fps };
+    let spec = snip_core::ProxySpec { input: &src, output: &out, duration: info.duration, fps: info.fps, media: Default::default() };
     let p = snip_core::make_proxy(&fixtures().tools, &spec, Encoder::Nvenc, &JobControl::new(), |r| last = r.percent).unwrap();
     let m = probe(&p);
     assert_eq!(m.video_codec, "h264");
@@ -463,7 +463,7 @@ fn hevc_preview_proxy_is_h264_720p_with_same_duration() {
 
     let rot_out = fixtures().root.join("out").join("proxy_rot.mp4");
     let src = f("hevc_rotated.mp4");
-    let spec = snip_core::ProxySpec { input: &src, output: &rot_out, duration: 5.0, fps: 25.0 };
+    let spec = snip_core::ProxySpec { input: &src, output: &rot_out, duration: 5.0, fps: 25.0, media: Default::default() };
     let p = snip_core::make_proxy(&fixtures().tools, &spec, Encoder::Libx264, &JobControl::new(), |_| {}).unwrap();
     let m = probe(&p);
     assert_eq!((m.width, m.height), (720, 1280), "vertical: lado corto 720");

@@ -111,6 +111,45 @@ pub struct MediaRef {
     pub rotation: u32,
     #[serde(default)]
     pub size_bytes: Option<u64>,
+    /// Pistas de audio del archivo (0 = desconocido; se trata como 1 si hay audio).
+    #[serde(default)]
+    pub audio_tracks: u32,
+    /// Transferencia HDR ("smpte2084" = PQ, "arib-std-b67" = HLG): se lleva a SDR al exportar.
+    #[serde(default)]
+    pub transfer: Option<String>,
+}
+
+impl MediaRef {
+    /// Pistas de audio que hay que mezclar (mínimo 1 si tiene audio).
+    pub fn audio_track_count(&self) -> u32 {
+        if !self.has_audio { 0 } else { self.audio_tracks.max(1) }
+    }
+
+    /// Un medio vacío (para tests y armar filtros sueltos).
+    pub fn placeholder() -> Self {
+        Self {
+            id: String::new(),
+            path: String::new(),
+            kind: MediaKind::Video,
+            duration: 0.0,
+            width: 0,
+            height: 0,
+            fps: 30.0,
+            fps_num: 30,
+            fps_den: 1,
+            has_audio: false,
+            video_codec: None,
+            audio_codec: None,
+            rotation: 0,
+            size_bytes: None,
+            audio_tracks: 0,
+            transfer: None,
+        }
+    }
+
+    pub fn is_hdr(&self) -> bool {
+        matches!(self.transfer.as_deref(), Some("smpte2084" | "arib-std-b67"))
+    }
 }
 
 fn default_fps() -> f64 {
@@ -192,11 +231,15 @@ pub struct ClipAudio {
     /// Reducción de ruido (afftdn).
     #[serde(default)]
     pub denoise: bool,
+    /// Pista de audio del archivo a usar (0 = la primera). None = mezclar
+    /// todas (lo normal en grabaciones con juego + micrófono).
+    #[serde(default)]
+    pub track: Option<u32>,
 }
 
 impl Default for ClipAudio {
     fn default() -> Self {
-        Self { volume: 1.0, muted: false, removed: false, fade_in: 0.0, fade_out: 0.0, normalize: None, denoise: false }
+        Self { volume: 1.0, muted: false, removed: false, fade_in: 0.0, fade_out: 0.0, normalize: None, denoise: false, track: None }
     }
 }
 
@@ -707,16 +750,19 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    /// fps normalizados (un proyecto viejo puede traer 90000/1 o 1300000/21667).
+    pub fn rate(&self) -> (u32, u32) {
+        crate::probe::standard_fps(self.fps_num, self.fps_den)
+    }
+
     pub fn fps(&self) -> f64 {
-        self.fps_num as f64 / self.fps_den.max(1) as f64
+        let (n, d) = self.rate();
+        n as f64 / d as f64
     }
     /// fps como fracción para FFmpeg ("30000/1001").
     pub fn fps_expr(&self) -> String {
-        if self.fps_den <= 1 {
-            format!("{}", self.fps_num)
-        } else {
-            format!("{}/{}", self.fps_num, self.fps_den)
-        }
+        let (n, d) = self.rate();
+        if d <= 1 { format!("{n}") } else { format!("{n}/{d}") }
     }
 }
 
@@ -939,5 +985,8 @@ mod tests {
         assert!(!OutputFormat::Webm.supports_copy());
         assert_eq!(OutputFormat::from_extension("WEBM"), Some(OutputFormat::Webm));
         assert_eq!(Canvas { width: 1, height: 1, fps_num: 30000, fps_den: 1001, auto: true }.fps_expr(), "30000/1001");
+        // Base de tiempo en vez de fps: tope de 240; promedio raro → 60.
+        assert_eq!(Canvas { width: 1, height: 1, fps_num: 90000, fps_den: 1, auto: true }.fps_expr(), "240");
+        assert_eq!(Canvas { width: 1, height: 1, fps_num: 1300000, fps_den: 21667, auto: true }.fps_expr(), "60");
     }
 }

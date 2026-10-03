@@ -20,6 +20,11 @@ export interface MediaInfo {
   audioCodec?: string | null;
   sizeBytes?: number | null;
   bitRate?: number | null;
+  audioTracks?: number;
+  hdr?: boolean;
+  colorTransfer?: string | null;
+  bitDepth?: number;
+  vfr?: boolean;
 }
 
 export type ExportMode = "fast" | "precise";

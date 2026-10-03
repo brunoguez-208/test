@@ -28,6 +28,10 @@ export interface MediaRef {
   audioCodec?: string | null;
   rotation: number;
   sizeBytes?: number | null;
+  /** Pistas de audio del archivo (ShadowPlay graba 2: juego y micrófono). */
+  audioTracks?: number;
+  /** Transferencia HDR ("smpte2084" = PQ, "arib-std-b67" = HLG). */
+  transfer?: string | null;
 }
 
 export type ClipKind = "video" | "freeze";
@@ -49,6 +53,8 @@ export interface ClipAudio {
   fadeOut: number;
   normalize: Loudness | null;
   denoise: boolean;
+  /** Pista del archivo a usar (0 = la primera); null/undefined = mezclar todas. */
+  track?: number | null;
 }
 
 export interface CropRect {
@@ -410,11 +416,41 @@ export const FORMATS: { id: OutputFormat; label: string; hint: string }[] = [
   { id: "mp3", label: "MP3", hint: "solo audio" },
 ];
 
+/** Frecuencias habituales (espejo de STANDARD_FPS en snip-core/src/probe.rs). */
+const STANDARD_FPS: [number, number][] = [
+  [24000, 1001], [24, 1], [25, 1], [30000, 1001], [30, 1], [48, 1], [50, 1], [60000, 1001], [60, 1],
+  [72, 1], [90, 1], [100, 1], [120000, 1001], [120, 1], [144, 1], [165, 1], [200, 1], [240, 1],
+];
+export const MAX_FPS = 240;
+
+/**
+ * fps "razonables": la frecuencia estándar más cercana (±1,5 %), si no un
+ * entero (tope 240). Igual que `standard_fps` de Rust: un proyecto con
+ * 90000/1 o 1300000/21667 se ve y se exporta igual.
+ */
+export function standardFps(num: number, den: number): [number, number] {
+  if (!(num > 0) || !(den > 0)) return [30, 1];
+  const f = num / den;
+  if (!Number.isFinite(f) || f < 1) return [30, 1];
+  if (f > MAX_FPS * 1.015) return [MAX_FPS, 1];
+  let best = STANDARD_FPS[0];
+  let err = Infinity;
+  for (const r of STANDARD_FPS) {
+    const e = Math.abs(r[0] / r[1] - f) / f;
+    if (e < err) [best, err] = [r, e];
+  }
+  if (err <= 0.015) return best;
+  if (den === 1 && num <= MAX_FPS) return [num, 1];
+  return [Math.min(MAX_FPS, Math.max(1, Math.round(f))), 1];
+}
+
 export function canvasFps(c: Canvas): number {
-  return c.fpsNum / Math.max(1, c.fpsDen);
+  const [n, d] = standardFps(c.fpsNum, c.fpsDen);
+  return n / d;
 }
 
 /** fps como fracción para FFmpeg ("30000/1001"). */
 export function canvasFpsExpr(c: Canvas): string {
-  return c.fpsDen <= 1 ? String(c.fpsNum) : `${c.fpsNum}/${c.fpsDen}`;
+  const [n, d] = standardFps(c.fpsNum, c.fpsDen);
+  return d <= 1 ? String(n) : `${n}/${d}`;
 }

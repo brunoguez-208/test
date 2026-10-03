@@ -12,6 +12,7 @@ import {
   MIN_SPEED,
   PROJECT_VERSION,
   canvasFps,
+  standardFps,
   type Clip,
   type MediaRef,
   type MusicClip,
@@ -101,8 +102,7 @@ export function fitCanvas(p: Project): Project {
   const g = clipGeometry(first.video, m);
   const width = Math.max(2, Math.round(g.width) - (Math.round(g.width) % 2));
   const height = Math.max(2, Math.round(g.height) - (Math.round(g.height) % 2));
-  const fpsNum = m.fpsNum || Math.round(m.fps);
-  const fpsDen = m.fpsDen || 1;
+  const [fpsNum, fpsDen] = standardFps(m.fpsNum || Math.round(m.fps), m.fpsDen || 1);
   const c = p.canvas;
   if (c.width === width && c.height === height && c.fpsNum === fpsNum && c.fpsDen === fpsDen) return p;
   return { ...p, canvas: { ...c, width, height, fpsNum, fpsDen } };

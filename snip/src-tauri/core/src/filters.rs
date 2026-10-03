@@ -75,8 +75,20 @@ pub fn sharpen_weight(v: f64) -> i32 {
 
 /// Efectos de imagen del clip, antes de llevarlo al lienzo:
 /// rotar → voltear → recortar → nitidez (luma) → color.
+/// HDR → SDR (BT.709, 8 bits) con tonemap Hable; nada si el medio es SDR.
+/// Los encoders por hardware no aceptan 10 bits/PQ en H.264, y sin esto el
+/// video HDR se vería lavado.
+pub fn hdr_to_sdr(media: &MediaRef) -> Option<String> {
+    let tin = media.transfer.as_deref().filter(|_| media.is_hdr())?;
+    Some(format!(
+        "zscale=tin={tin}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,\
+zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+    ))
+}
+
 pub fn clip_video_effects(v: &ClipVideo, media: &MediaRef) -> Vec<String> {
     let mut f = vec![];
+    f.extend(hdr_to_sdr(media));
     match v.rotate % 360 {
         90 => f.push("transpose=clock".to_string()),
         180 => f.push("hflip,vflip".to_string()),

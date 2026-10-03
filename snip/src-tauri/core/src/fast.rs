@@ -70,6 +70,11 @@ pub fn plan(p: &Project, st: &ExportSettings, window: Option<(f64, f64)>) -> Opt
     if (p.canvas.fps() - media.fps).abs() > 0.01 || !copy_compatible(st.format, &media) {
         return None;
     }
+    // Varias pistas de audio (juego + micrófono): copiarlas dejaría solo la
+    // primera audible en la mayoría de los reproductores; hay que mezclarlas.
+    if media.audio_track_count() > 1 {
+        return None;
+    }
     let mut last_out = -1.0;
     for c in &p.clips {
         if c.media_id != media.id || !clip_is_plain(c) || c.in_point < last_out - EPS {
@@ -184,6 +189,9 @@ mod tests {
         })
         .is_none());
         assert!(check(&|p| p.canvas.width = 1280).is_none());
+        // Dos pistas de audio (ShadowPlay): se mezclan, no se copian.
+        assert!(check(&|p| p.media[0].audio_tracks = 2).is_none());
+        assert!(check(&|p| p.media[0].audio_tracks = 1).is_some());
         // MKV acepta cualquier códec; MP4 no acepta PCM.
         assert!(check(&|p| p.media[0].audio_codec = Some("pcm_s16le".into())).is_none());
         assert!(check(&|p| {

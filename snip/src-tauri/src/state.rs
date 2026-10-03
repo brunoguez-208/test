@@ -172,16 +172,22 @@ impl AppState {
         if failed == Encoder::Libx264 {
             return;
         }
+        // Solo en memoria: al abrir Snip de nuevo se vuelve a probar (un
+        // driver actualizado o una sesión de NVENC liberada lo arreglan).
         if let Ok(mut g) = self.encoder.lock() {
             *g = Some(Encoder::Libx264);
         }
-        self.write_cache(Encoder::Libx264);
+        snip_core::log::warn(&format!("{} falló: se usa libx264 hasta reiniciar Snip", failed.ffmpeg_name()));
     }
 
     /// Ruta del proxy de preview: depende de la ruta, el tamaño y la fecha del original.
-    pub fn proxy_path_for(&self, input: &Path) -> PathBuf {
+    pub fn proxy_path_for(&self, input: &Path, variant: &str) -> PathBuf {
         let mut h = DefaultHasher::new();
         input.to_string_lossy().to_lowercase().hash(&mut h);
+        // El proxy común conserva su nombre de siempre (caché de versiones anteriores).
+        if variant != "[]|None" {
+            variant.hash(&mut h);
+        }
         if let Ok(m) = std::fs::metadata(input) {
             m.len().hash(&mut h);
             if let Ok(t) = m.modified() {

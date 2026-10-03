@@ -10,6 +10,10 @@ se corta, se retoma desde acá.
       (Rust 19 integración + unit, Vitest 42, Playwright 18).
 - [x] **Tanda 1** — base del editor (instalador generado)
 - [x] **Tanda 2** — imagen, texto y efectos (instalador final generado)
+- [ ] **Actualización 2.1 — tanda A** (grabaciones NVIDIA, ventana, portapapeles, imagen,
+      audio, pistas, proyecto/versiones/plantillas) — en curso
+- [ ] **Actualización 2.1 — tanda B** (biblioteca, visor de origen, rampas, chroma, presets,
+      máscaras, herramientas automáticas, sonidos)
 
 ## Decisiones tomadas
 
@@ -160,3 +164,49 @@ se corta, se retoma desde acá.
   falla, se repite con `-ng` (CPU). En este entorno no se puede bajar el modelo (Hugging Face está
   bloqueado): la transcripción real queda para la prueba manual; parsing, agrupado, argumentos,
   descarga (con `file://`) y extracción de audio sí tienen tests.
+
+
+## Actualización 2.1 — tanda A — checklist
+Reglas: mismo diseño y animaciones, todo lo existente sigue andando, tests como regresión,
+un commit por funcionalidad. Al terminar la tanda A: tests completos + instalador, y seguir con B.
+
+- [x] A1. Grabaciones de NVIDIA (ShadowPlay / Instant Replay) que fallaban con NVENC
+- [ ] A2. Controles de ventana duplicados al maximizar
+- [ ] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
+- [ ] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
+- [ ] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
+- [ ] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
+- [ ] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
+- [ ] Cierre: tests completos + instalador de la tanda A
+
+### Notas de A1 (grabaciones de NVIDIA)
+- Causa: ShadowPlay graba VFR; el promedio sale como fracciones enormes (`1300000/21667`) y
+  algunas herramientas reportan la base de tiempo (`90000/1`) como fps. Ese valor terminaba en
+  el lienzo y en el `fps=` del filtro, y NVENC no inicializa con esas fracciones (x264 sí).
+  Además 10 bits / HDR y las dos pistas de audio (juego + micrófono) no estaban contempladas.
+- `probe.rs`: `avg_frame_rate` → cuadros/duración → `r_frame_rate` (se descarta > 1000 fps);
+  si es VFR con cuadros salteados y la nominal es apenas mayor, se usa la nominal. Todo pasa por
+  `standard_fps` (la estándar más cercana ±1,5 %, si no un entero, tope 240). También detecta
+  pistas de audio, bits por componente y HDR (PQ/HLG). `Canvas::fps()` normaliza siempre, así
+  que proyectos viejos con 90000/1 exportan bien. Espejo en TS (`standardFps`).
+- Antes de cualquier encoder: HDR → SDR (zscale + tonemap Hable, BT.709) y `format=yuv420p`
+  (8 bits 4:2:0). Las pistas de audio se mezclan con `amix` (sin normalizar) por defecto, en el
+  render directo y en la etapa pesada; en la pestaña Audio se puede elegir una sola pista.
+  El modo rápido no copia archivos con varias pistas (quedaría audible solo la primera).
+- Preview = exportación: para medios con varias pistas o HDR se genera solo un proxy 720p que
+  mezcla/convierte igual (el preview sigue andando mientras tanto, con un aviso chico).
+- **Fallback obligatorio**: cualquier error con el encoder por hardware (salvo cancelar, disco
+  lleno, permisos o archivo faltante) se reintenta con libx264, también en la etapa pesada y en
+  el proxy. NVENC se descarta solo en esa sesión y solo si falló el encoder en sí (antes quedaba
+  desactivado para siempre en la caché).
+- Errores útiles: "Ver detalles" con el texto real de FFmpeg (hasta 4000 caracteres), botón
+  "Copiar" y "Abrir log", en el aviso flotante y en la cola. Log rotativo en
+  `%APPDATA%\com.snip.app\logs\snip.log` (1 MB × 3) con cada comando de FFmpeg que falló.
+- Nombres con varios puntos (`Desktop 2026.10.03 - 04.28.16.07.mp4`): la extensión es solo lo
+  último en Rust y TS (tests en los dos lados).
+- Tests: `tests/nvidia_integration.rs` genera HEVC VFR con base de tiempo 90000 y dos pistas,
+  HEVC 10 bits HDR 4K120 y AV1 10 bits 4K144; exporta pidiendo NVENC (acá falla de verdad, sin
+  GPU) y verifica con ffprobe H.264, yuv420p, fps estándar, una pista con las dos mezcladas
+  (tonos de 440 Hz y 1 kHz), elegir una sola pista, la etapa pesada y proyectos viejos.
+  Unit tests de probe con JSON real de ShadowPlay (`r_frame_rate` 90000/1), Vitest y Playwright
+  (`e2e/nvidia.spec.ts`).

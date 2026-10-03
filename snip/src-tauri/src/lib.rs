@@ -62,6 +62,8 @@ pub fn run() {
         .setup(|app| {
             let cache_dir = app.path().app_cache_dir().unwrap_or_else(|_| std::env::temp_dir().join("Snip"));
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| cache_dir.join("data"));
+            snip_core::log::init(&data_dir.join("logs"));
+            snip_core::log::info(&format!("Snip {} iniciado", env!("CARGO_PKG_VERSION")));
             let launch = state::file_arg(std::env::args()).map(|f| {
                 std::fs::canonicalize(&f)
                     .map(|p| {
@@ -91,7 +93,12 @@ pub fn run() {
                     let heavy = st.heavy_dir();
                     let temp = st.temp_dir();
                     let env = ExportEnv { tools: &st.tools, encoder: st.encoder(), heavy_dir: &heavy, temp_dir: &temp };
+                    snip_core::log::info(&format!("exportando {:?} con {}", job.output, env.encoder.ffmpeg_name()));
                     let r = export_project(&env, job, ctl, progress, |failed| st.mark_encoder_failed(failed));
+                    match &r {
+                        Ok(o) => snip_core::log::info(&format!("exportado {} ({:?}, fallback: {})", o.output, o.encoder, o.fell_back)),
+                        Err(e) => snip_core::log::error(&format!("exportación fallida: {}", e.log_line())),
+                    }
                     // Las capas rasterizadas de este trabajo ya no hacen falta.
                     if let Some(dir) = job.raster.as_ref().and_then(|r| r.dir.as_deref()) {
                         snip_core::raster::remove_job_dir(&st.raster_dir(), dir);
@@ -141,6 +148,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::take_launch_file,
+            commands::reveal_log,
             commands::show_main_window,
             commands::get_appearance,
             commands::open_media,

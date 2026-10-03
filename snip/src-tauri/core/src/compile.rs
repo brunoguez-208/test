@@ -294,9 +294,13 @@ fn compile_clip(
                     let mut tempo = vec![format!("atrim=start={}", num(real_pre)), s("asetpts=PTS-STARTPTS")];
                     tempo.extend(atempo_chain(clip.speed));
                     let mut parts = vec![];
+                    let tracks = heavy::audio_tracks(media, clip.audio.track);
                     for &k in &ks {
                         let l = g.label("q");
-                        g.add(&[&format!("{k}:a:0")], &tempo.join(","), &l);
+                        let (ins, mix) = heavy::mix_inputs(k, &tracks);
+                        let refs: Vec<&str> = ins.iter().map(String::as_str).collect();
+                        let chain: Vec<String> = mix.into_iter().chain(tempo.iter().cloned()).collect();
+                        g.add(&refs, &chain.join(","), &l);
                         parts.push(l);
                     }
                     let joined = if parts.len() > 1 {
@@ -1103,5 +1107,25 @@ mod tests {
         let inter = HashMap::new();
         let e = compile(&p, &opts(&st, &inter)).unwrap_err();
         assert!(e.message.contains("vacío"));
+    }
+
+    #[test]
+    fn shadowplay_media_mixes_tracks_and_tonemaps_before_any_encoder() {
+        let mut p = base();
+        p.media[0].audio_tracks = 2;
+        p.media[0].transfer = Some("smpte2084".into());
+        let st = p.export.clone();
+        let none = HashMap::new();
+        for enc in crate::encoder::PREFERENCE {
+            let c = compile(&p, &CompileOptions { encoder: enc, ..opts(&st, &none) }).unwrap();
+            assert!(c.filter.contains("[0:a:0][0:a:1]amix=inputs=2:duration=longest:normalize=0,atrim="), "{}", c.filter);
+            assert!(c.filter.contains("zscale=tin=smpte2084"), "{}", c.filter);
+            // Siempre 8 bits 4:2:0 antes del encoder.
+            assert!(c.filter.contains(&format!("format={}", enc.pix_fmt())));
+        }
+        // Una pista elegida: solo esa, sin amix.
+        p.clips[0].audio.track = Some(1);
+        let c = compile(&p, &opts(&st, &none)).unwrap();
+        assert!(c.filter.contains("[0:a:1]atrim=") && !c.filter.contains("amix=inputs=2:duration=longest"), "{}", c.filter);
     }
 }

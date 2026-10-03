@@ -51,7 +51,7 @@ import {
 
 export function notifyError(title: string, err: AppError | unknown) {
   const e = toAppError(err);
-  pushToast({ severity: "critical", title, message: e.message });
+  pushToast({ severity: "critical", title, message: e.message, detail: e.detail });
 }
 
 export function notifyEditError(e: unknown) {
@@ -74,10 +74,17 @@ function procReady(st: ProcState | undefined, sig?: string): string | null {
 }
 
 const resolver: SourceResolver = {
-  mediaUrl(m: MediaRef) {
+  mediaUrl(m: MediaRef, track?: number | null) {
     const s = useEditor.getState();
     const tab = activeTab(s);
     if (tab?.missing.includes(m.id)) return null;
+    // Varias pistas o HDR: el proxy mezcla/convierte igual que la exportación.
+    const need = proxyNeed(m, track);
+    if (need) {
+      const ready = procReady(s.proxies[need.key]);
+      if (ready) return mediaSrc(ready);
+      if (!s.proxies[need.key]) queueMicrotask(() => void ensureProxy(m, need));
+    }
     const proxy = procReady(s.proxies[m.path]);
     return mediaSrc(proxy ?? m.path);
   },
@@ -88,7 +95,7 @@ const resolver: SourceResolver = {
       const ready = procReady(s.heavy[c.id], heavySignature(c, p));
       if (ready) return { url: mediaSrc(ready), processed: true };
     }
-    const url = resolver.mediaUrl(m);
+    const url = resolver.mediaUrl(m, c.audio.track);
     return url ? { url, processed: false } : null;
   },
   peaks(m: MediaRef) {
@@ -522,26 +529,57 @@ function flushThumbs() {
 
 // ------------------------------- Proxies (HEVC) -------------------------------
 
+export interface ProxyNeed {
+  key: string;
+  tracks: number[];
+  transfer: string | null;
+}
+
+const HDR_TRANSFERS = ["smpte2084", "arib-std-b67"];
+
+/**
+ * ¿Este medio necesita un proxy para que el preview coincida con la
+ * exportación? (varias pistas de audio a mezclar o HDR a convertir).
+ */
+export function proxyNeed(m: MediaRef, track?: number | null): ProxyNeed | null {
+  if (m.kind !== "video") return null;
+  const n = m.hasAudio ? Math.max(1, m.audioTracks ?? 1) : 0;
+  const transfer = m.transfer && HDR_TRANSFERS.includes(m.transfer) ? m.transfer : null;
+  const tracks = track != null && track < n ? [track] : n > 1 ? Array.from({ length: n }, (_, i) => i) : [];
+  if (!transfer && (tracks.length === 0 || (tracks.length === 1 && tracks[0] === 0))) return null;
+  return { key: `${m.path}#${tracks.join(",")}#${transfer ?? ""}`, tracks, transfer };
+}
+
+// El backend genera un proxy por vez: los pedidos se encadenan.
+let proxyChain: Promise<void> = Promise.resolve();
+
+function ensureProxy(m: MediaRef, need: ProxyNeed | null) {
+  const key = need?.key ?? m.path;
+  if (useEditor.getState().proxies[key]) return proxyChain;
+  const set = (v: ProcState) => useEditor.setState((s) => ({ proxies: { ...s.proxies, [key]: v } }));
+  set({ status: "pending", percent: 0, sig: "" });
+  proxyChain = proxyChain.then(async () => {
+    const off = await events.onProxyProgress((e) => {
+      if (e.path === m.path) set({ status: "pending", percent: e.percent, sig: "" });
+    });
+    try {
+      const path = await api.createPreviewProxy(m.path, m.duration, m.fps, need?.tracks, need?.transfer);
+      set({ status: "ready", path, sig: "" });
+      player().requestRender();
+    } catch (e) {
+      set({ status: "error", error: toAppError(e), sig: "" });
+    } finally {
+      off();
+    }
+  });
+  return proxyChain;
+}
+
 async function fallbackToProxy(url: string) {
   const p = activeProject();
   const m = p?.media.find((x) => mediaSrc(x.path) === url);
   if (!m || m.kind !== "video") return;
-  const st = useEditor.getState().proxies[m.path];
-  if (st) return;
-  const set = (v: ProcState) => useEditor.setState((s) => ({ proxies: { ...s.proxies, [m.path]: v } }));
-  set({ status: "pending", percent: 0, sig: "" });
-  const off = await events.onProxyProgress((e) => {
-    if (e.path === m.path) set({ status: "pending", percent: e.percent, sig: "" });
-  });
-  try {
-    const path = await api.createPreviewProxy(m.path, m.duration, m.fps);
-    set({ status: "ready", path, sig: "" });
-    player().requestRender();
-  } catch (e) {
-    set({ status: "error", error: toAppError(e), sig: "" });
-  } finally {
-    off();
-  }
+  await ensureProxy(m, proxyNeed(m));
 }
 
 // ------------------------------- Etapa pesada -------------------------------
@@ -1042,7 +1080,7 @@ function onQueue(items: QueueItem[]) {
       void refreshWelcome();
     } else if (it.status.state === "failed") {
       notified.add(it.id);
-      pushToast({ severity: "critical", title: `No se pudo exportar «${it.title}»`, message: it.status.error.message });
+      pushToast({ severity: "critical", title: `No se pudo exportar «${it.title}»`, message: it.status.error.message, detail: it.status.error.detail });
     }
   }
 }

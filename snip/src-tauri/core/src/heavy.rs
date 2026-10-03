@@ -76,7 +76,7 @@ pub struct StageKeys {
 }
 
 pub fn stage_keys(c: &Clip, fingerprint: u64, canvas_fps: &str, encoder: Encoder) -> StageKeys {
-    let src = format!("{fingerprint:x}|{}|{}|{:?}", num(c.in_point), num(c.out_point), encoder);
+    let src = format!("{fingerprint:x}|{}|{}|{:?}|{:?}", num(c.in_point), num(c.out_point), encoder, c.audio.track);
     let base_params = format!(
         "{:?}|{}|{}",
         c.video.stabilize.map(|s| (s.strength * 1000.0).round() as i64),
@@ -164,15 +164,49 @@ fn head() -> Vec<String> {
 /// Fuente de una etapa: el original (con seek) o un archivo intermedio entero.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
-    Original { path: String, start: f64, len: f64, fps: f64 },
+    /// `tracks`: pistas de audio del original a mezclar (vacío = la primera).
+    Original { path: String, start: f64, len: f64, fps: f64, tracks: Vec<u32> },
     File { path: String },
+}
+
+/// Pistas de audio a leer de un medio según la elección del clip.
+pub fn audio_tracks(media: &MediaRef, track: Option<u32>) -> Vec<u32> {
+    let n = media.audio_track_count();
+    match track {
+        Some(t) if t < n => vec![t],
+        _ if n > 1 => (0..n).collect(),
+        _ => vec![0],
+    }
+}
+
+/// Filtro de entrada que junta las pistas (vacío si es una sola).
+pub fn mix_inputs(k: usize, tracks: &[u32]) -> (Vec<String>, Option<String>) {
+    let ins = tracks.iter().map(|t| format!("{k}:a:{t}")).collect();
+    let mix = (tracks.len() > 1).then(|| format!("amix=inputs={}:duration=longest:normalize=0", tracks.len()));
+    (ins, mix)
+}
+
+/// `-af` + `-map` del audio de una etapa; con varias pistas, las mezcla.
+fn audio_map(src: &Source, af: &str) -> Vec<String> {
+    let tracks: &[u32] = match src {
+        Source::Original { tracks, .. } if !tracks.is_empty() => tracks,
+        _ => &[0],
+    };
+    let (ins, mix) = mix_inputs(0, tracks);
+    match mix {
+        Some(m) => {
+            let ins: String = ins.iter().map(|i| format!("[{i}]")).collect();
+            vec![s("-filter_complex"), format!("{ins}{m},{af}[ha]"), s("-map"), s("[ha]")]
+        }
+        None => vec![s("-af"), af.to_string(), s("-map"), format!("0:{}", ins[0].trim_start_matches("0:"))],
+    }
 }
 
 impl Source {
     /// Argumentos de input para leer `[off, off+len)` de esta fuente.
     fn input(&self, off: f64, len: Option<f64>) -> (Vec<String>, f64) {
         match self {
-            Source::Original { path, start, len: total, fps } => {
+            Source::Original { path, start, len: total, fps, .. } => {
                 let pre = 0.25 / fps.max(1.0);
                 let ss = (start + off - pre).max(0.0);
                 let real_pre = start + off - ss;
@@ -251,11 +285,10 @@ pub fn base_args(c: &Clip, src: &Source, trf: Option<&str>, has_audio: bool, enc
         if c.audio.denoise {
             af.push(s(AUDIO_DENOISE));
         }
-        a.extend([s("-af"), af.join(",")]);
-    }
-    a.extend([s("-map"), s("0:v:0")]);
-    if has_audio {
-        a.extend([s("-map"), s("0:a:0")]);
+        a.extend([s("-map"), s("0:v:0")]);
+        a.extend(audio_map(src, &af.join(",")));
+    } else {
+        a.extend([s("-map"), s("0:v:0")]);
     }
     a.extend(piece_video_args(encoder, gop));
     a.extend(piece_audio_args(has_audio));
@@ -272,12 +305,9 @@ pub fn reverse_chunk_args(src: &Source, off: f64, len: f64, has_audio: bool, enc
         s("-vf"),
         format!("trim=start={},setpts=PTS-STARTPTS,reverse,format={}", num(pre), encoder.pix_fmt()),
     ]);
-    if has_audio {
-        a.extend([s("-af"), format!("atrim=start={},asetpts=PTS-STARTPTS,areverse", num(pre))]);
-    }
     a.extend([s("-map"), s("0:v:0")]);
     if has_audio {
-        a.extend([s("-map"), s("0:a:0")]);
+        a.extend(audio_map(src, &format!("atrim=start={},asetpts=PTS-STARTPTS,areverse", num(pre))));
     }
     a.extend(piece_video_args(encoder, gop));
     a.extend(piece_audio_args(has_audio));
@@ -309,11 +339,10 @@ pub fn speed_args(src: &Source, c: &Clip, canvas_fps: &str, has_audio: bool, enc
     if has_audio {
         let mut af = vec![format!("atrim=start={}", num(pre)), s("asetpts=PTS-STARTPTS")];
         af.extend(atempo_chain(c.speed));
-        a.extend([s("-af"), af.join(",")]);
-    }
-    a.extend([s("-map"), s("0:v:0")]);
-    if has_audio {
-        a.extend([s("-map"), s("0:a:0")]);
+        a.extend([s("-map"), s("0:v:0")]);
+        a.extend(audio_map(src, &af.join(",")));
+    } else {
+        a.extend([s("-map"), s("0:v:0")]);
     }
     a.extend(piece_video_args(encoder, gop));
     a.extend(piece_audio_args(has_audio));
@@ -392,7 +421,7 @@ pub fn process_clip(
     let src_fps = media.fps.max(1.0);
     let gop = src_fps.round().max(1.0) as u32;
     let out_gop = if c.smooth_slowmo { canvas_fps_value.round() as u32 } else { gop };
-    let original = Source::Original { path: media.path.clone(), start: c.in_point, len, fps: src_fps };
+    let original = Source::Original { path: media.path.clone(), start: c.in_point, len, fps: src_fps, tracks: audio_tracks(media, c.audio.track) };
 
     // Pesos: estimación del costo de cada etapa (en "segundos de video procesado").
     let mut total_weight = 0.0;
@@ -628,7 +657,7 @@ mod tests {
         let mut c = clip("a", 2.0, 6.0);
         c.speed = 0.5;
         c.smooth_slowmo = true;
-        let src = Source::Original { path: "C:\\v\\a.mp4".into(), start: 2.0, len: 4.0, fps: 30.0 };
+        let src = Source::Original { path: "C:\\v\\a.mp4".into(), start: 2.0, len: 4.0, fps: 30.0, tracks: vec![] };
         let a = speed_args(&src, &c, "60", true, Encoder::Libx264, 60, Path::new("o.mov")).join(" ");
         assert!(a.contains("-ss 1.991667 -t 4.000000 -i C:\\v\\a.mp4"), "{a}");
         assert!(a.contains("setpts=(PTS-STARTPTS)/0.5,minterpolate=fps=60:mi_mode=mci"));

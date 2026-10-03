@@ -10,6 +10,7 @@ import { addMusicWithDialog, extractAudio, setNormalize } from "../../store/cont
 import { Button } from "../ui/Button";
 import { RangeSlider } from "../ui/RangeSlider";
 import { Toggle } from "../ui/Toggle";
+import { Select } from "../ui/Select";
 import { Field, Section, fmtNum } from "./Field";
 import { useSelectedMusic, useTargetClip } from "./useTarget";
 
@@ -28,8 +29,23 @@ function ClipAudioSection({ clip, project }: { clip: Clip; project: Project }) {
     );
   }
   const off = a.removed || a.muted;
+  const tracks = media.audioTracks ?? 1;
   return (
     <Section title="Audio del clip" testId="clip-audio">
+      {tracks > 1 && (
+        <Field label="Pistas de audio" hint="Las grabaciones de NVIDIA guardan el juego y el micrófono por separado. Por defecto suenan las dos.">
+          <Select<string>
+            label="Pistas de audio"
+            value={a.track == null ? "mix" : String(a.track)}
+            options={[
+              { value: "mix", label: `Mezclar las ${tracks}` },
+              ...Array.from({ length: tracks }, (_, i) => ({ value: String(i), label: `Solo la pista ${i + 1}`, hint: i === 0 ? "juego / sistema" : i === 1 ? "micrófono" : undefined })),
+            ]}
+            onChange={(v) => set((c) => ({ ...c, audio: { ...c.audio, track: v === "mix" ? undefined : Number(v) } }))}
+            testId="clip-audio-track-select"
+          />
+        </Field>
+      )}
       <Field label="Volumen" aside={<span className="t-caption tabular text-[var(--text-secondary)]" data-testid="volume-value">{pct(a.volume)}</span>}>
         <RangeSlider
           label="Volumen del clip"

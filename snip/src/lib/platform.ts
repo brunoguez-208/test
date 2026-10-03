@@ -32,7 +32,8 @@ export const api = {
     invoke<void>("request_thumbnails", { group, generation, items, height }),
   getWaveform: (path: string) => invoke<string>("get_waveform", { path }),
   analyzeLoudness: (path: string, start: number, duration: number) => invoke<Loudness>("analyze_loudness", { path, start, duration }),
-  createPreviewProxy: (path: string, duration: number, fps: number) => invoke<string>("create_preview_proxy", { path, duration, fps }),
+  createPreviewProxy: (path: string, duration: number, fps: number, tracks?: number[], transfer?: string | null) =>
+    invoke<string>("create_preview_proxy", { path, duration, fps, tracks: tracks ?? null, transfer: transfer ?? null }),
   cancelProxy: () => invoke<void>("cancel_proxy"),
   prepareClip: (key: string, media: MediaRef, clip: Clip, canvasFps: string, canvasFpsValue: number) =>
     invoke<string>("prepare_clip", { key, media, clip, canvasFps, canvasFpsValue }),
@@ -69,6 +70,7 @@ export const api = {
   cancelTranscribe: () => invoke<void>("cancel_transcribe"),
   filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
   revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
+  revealLog: () => invoke<string>("reveal_log"),
   openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
 };
 
