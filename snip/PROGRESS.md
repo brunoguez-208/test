@@ -103,13 +103,13 @@ se corta, se retoma desde acá.
 
 
 ## Tanda 2 — checklist
-- [ ] 22. Crop con proporciones
-- [ ] 23. Rotar / voltear
-- [ ] 24. Zoom y paneo con keyframes
-- [ ] 25. Ajustes de color
-- [ ] 26. Looks
-- [ ] 27. Estabilización (vidstab 2 pasadas)
-- [ ] 28. Nitidez y reducción de ruido de imagen
+- [x] 22. Crop con proporciones
+- [x] 23. Rotar / voltear
+- [x] 24. Zoom y paneo con keyframes
+- [x] 25. Ajustes de color
+- [x] 26. Looks
+- [x] 27. Estabilización (vidstab 2 pasadas)
+- [x] 28. Nitidez y reducción de ruido de imagen
 - [ ] 29. Texto y títulos
 - [ ] 30. Subtítulos `.srt`
 - [ ] 31. Subtítulos automáticos (whisper.cpp)
@@ -117,3 +117,15 @@ se corta, se retoma desde acá.
 - [ ] 33. Desenfocar / pixelar zona
 - [ ] 34. Picture-in-picture
 - [ ] Tests completos + instalador final
+
+### Notas de la tanda 2
+- **Paridad por construcción**: Rust (`filters.rs`, `color.rs`) y el shader del preview siguen la
+  misma cadena: rotar → voltear → recortar (píxeles pares) → nitidez de luma (`convolution`) →
+  color (dos afines con `colorchannelmixer` en `gbrap`, el desplazamiento entra por el alfa, y
+  curvas con `lutrgb` evaluadas con los mismos coeficientes que la tabla del preview) → encajar
+  → zoom/paneo (`perspective` con expresiones por cuadro; ojo: su `in` arranca en 1).
+- Los looks están en `src-tauri/core/config/looks.json` (los leen Rust y el frontend).
+- El lienzo automático sigue al tamaño visible del primer clip (rotado/recortado).
+- whisper.cpp: los binarios oficiales para Windows solo traen CPU o CUDA (670 MB). Se compila
+  con MinGW + Vulkan (`scripts/build-whisper.sh`): GPU de NVIDIA, AMD o Intel, y la CPU como
+  respaldo automático (ggml carga los backends como DLL).
