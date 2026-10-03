@@ -1,25 +1,36 @@
-//! Estado global de la app: rutas de FFmpeg, trabajos en curso y caché del encoder.
+//! Estado global de la app: rutas de FFmpeg, trabajos en curso, caché del
+//! encoder, almacenamiento de proyectos y cola de exportación.
 
 use serde::{Deserialize, Serialize};
 use snip_core::encoder::Encoder;
+use snip_core::queue::ExportQueue;
 use snip_core::runner::{JobControl, Tools};
+use snip_core::store::Store;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const ENCODER_CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 const PROXY_TTL: Duration = Duration::from_secs(3 * 24 * 3600);
+/// Los intermedios de la etapa pesada se borran si nadie los usó en 14 días.
+const HEAVY_TTL: Duration = Duration::from_secs(14 * 24 * 3600);
 
 pub struct AppState {
     pub tools: Tools,
     pub cache_dir: PathBuf,
+    pub store: Store,
     pub launch_file: Mutex<Option<String>>,
     pub material: Mutex<String>,
-    pub export_job: Mutex<Option<JobControl>>,
     pub proxy_job: Mutex<Option<JobControl>>,
-    pub thumbs_job: Mutex<Option<JobControl>>,
+    /// Miniaturas por grupo (cada pedido nuevo de un grupo cancela el anterior).
+    pub thumbs_jobs: Mutex<HashMap<String, JobControl>>,
+    /// Etapa pesada para el preview, por clave del clip.
+    pub heavy_jobs: Mutex<HashMap<String, JobControl>>,
+    pub waveforms: Mutex<HashMap<String, std::sync::Arc<Vec<u8>>>>,
+    pub queue: OnceLock<ExportQueue>,
     /// Encoder detectado. El Mutex también serializa la detección.
     encoder: Mutex<Option<Encoder>>,
 }
@@ -45,10 +56,7 @@ pub fn resolve_tools() -> Tools {
             ffprobe: dir.join(format!("ffprobe{}", std::env::consts::EXE_SUFFIX)),
         };
     }
-    let dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-        .unwrap_or_default();
+    let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     Tools {
         ffmpeg: dir.join(format!("ffmpeg{}", std::env::consts::EXE_SUFFIX)),
         ffprobe: dir.join(format!("ffprobe{}", std::env::consts::EXE_SUFFIX)),
@@ -56,18 +64,33 @@ pub fn resolve_tools() -> Tools {
 }
 
 impl AppState {
-    pub fn new(tools: Tools, cache_dir: PathBuf, launch_file: Option<String>) -> Self {
-        let _ = std::fs::create_dir_all(cache_dir.join("proxies"));
+    pub fn new(tools: Tools, cache_dir: PathBuf, data_dir: PathBuf, launch_file: Option<String>) -> Self {
+        for d in ["proxies", "heavy", "tmp", "raster"] {
+            let _ = std::fs::create_dir_all(cache_dir.join(d));
+        }
         Self {
             tools,
+            store: Store::new(&data_dir),
             cache_dir,
             launch_file: Mutex::new(launch_file),
             material: Mutex::new("none".into()),
-            export_job: Mutex::new(None),
             proxy_job: Mutex::new(None),
-            thumbs_job: Mutex::new(None),
+            thumbs_jobs: Mutex::new(HashMap::new()),
+            heavy_jobs: Mutex::new(HashMap::new()),
+            waveforms: Mutex::new(HashMap::new()),
+            queue: OnceLock::new(),
             encoder: Mutex::new(None),
         }
+    }
+
+    pub fn heavy_dir(&self) -> PathBuf {
+        self.cache_dir.join("heavy")
+    }
+    pub fn temp_dir(&self) -> PathBuf {
+        self.cache_dir.join("tmp")
+    }
+    pub fn raster_dir(&self) -> PathBuf {
+        self.cache_dir.join("raster")
     }
 
     fn ffmpeg_size(&self) -> u64 {
@@ -134,21 +157,27 @@ impl AppState {
         self.cache_dir.join("proxies").join(format!("{:016x}.mp4", h.finish()))
     }
 
-    /// Borra proxies viejos para no llenar el disco.
-    pub fn cleanup_proxies(&self) {
-        let Ok(entries) = std::fs::read_dir(self.cache_dir.join("proxies")) else { return };
-        for e in entries.flatten() {
-            let old = e
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > PROXY_TTL);
-            let partial = e.file_name().to_string_lossy().ends_with(".snip-part");
-            if old || partial {
-                let _ = std::fs::remove_file(e.path());
+    /// Borra proxies, intermedios y temporales viejos para no llenar el disco.
+    pub fn cleanup_caches(&self) {
+        let sweep = |dir: PathBuf, ttl: Duration| {
+            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            for e in entries.flatten() {
+                let old = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|age| age > ttl);
+                let partial = e.file_name().to_string_lossy().ends_with(".snip-part");
+                if old || partial {
+                    let _ = if e.path().is_dir() { std::fs::remove_dir_all(e.path()) } else { std::fs::remove_file(e.path()) };
+                }
             }
-        }
+        };
+        sweep(self.cache_dir.join("proxies"), PROXY_TTL);
+        sweep(self.heavy_dir(), HEAVY_TTL);
+        sweep(self.temp_dir(), Duration::from_secs(24 * 3600));
+        sweep(self.raster_dir(), Duration::from_secs(24 * 3600));
     }
 }
 

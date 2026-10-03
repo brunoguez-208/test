@@ -14,11 +14,13 @@ pub mod migrate;
 pub mod naming;
 pub mod probe;
 pub mod progress;
+pub mod queue;
 pub mod project;
 pub mod project_export;
 pub mod runner;
 pub mod scale;
 pub mod sizing;
+pub mod store;
 pub mod timeline;
 #[cfg(test)]
 pub(crate) mod testutil;
@@ -199,6 +201,19 @@ pub fn export(
             Err(e) => return Err(e),
         }
     }
+}
+
+/// Una miniatura JPEG en el segundo `t` (cerca del final, prueba un poco antes).
+pub fn thumbnail(tools: &Tools, input: &Path, t: f64, height: u32) -> Option<Vec<u8>> {
+    let input = input.to_string_lossy();
+    for tt in [t, (t - 0.5).max(0.0)] {
+        if let Ok(b) = runner::run_capture(&tools.ffmpeg, &export::thumbnail_args(&input, tt, height)) {
+            if !b.is_empty() {
+                return Some(b);
+            }
+        }
+    }
+    None
 }
 
 /// Genera `times.len()` miniaturas JPEG en paralelo (de a `parallel`), con

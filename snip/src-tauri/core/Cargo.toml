@@ -1,6 +1,6 @@
 [package]
 name = "snip-core"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 description = "Lógica de FFmpeg/FFprobe de Snip, sin dependencias de UI (testeable en cualquier plataforma)."
 
