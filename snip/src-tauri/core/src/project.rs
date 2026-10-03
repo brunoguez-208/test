@@ -69,6 +69,8 @@ pub struct Project {
     /// Grupos (Ctrl+G): ids que se seleccionan, mueven, copian y borran juntos.
     #[serde(default)]
     pub groups: Vec<Vec<String>>,
+    #[serde(default)]
+    pub tracks: Tracks,
 }
 
 impl Project {
@@ -238,11 +240,114 @@ pub struct ClipAudio {
     /// todas (lo normal en grabaciones con juego + micrófono).
     #[serde(default)]
     pub track: Option<u32>,
+    /// "Mejorar voz" (EQ, compresor, ruido y nivel de micrófono).
+    #[serde(default)]
+    pub enhance: Option<VoiceEnhance>,
+    /// El audio se separó a una pista propia ("Separar audio"): acá no suena.
+    #[serde(default)]
+    pub detached: bool,
 }
 
 impl Default for ClipAudio {
     fn default() -> Self {
-        Self { volume: 1.0, muted: false, removed: false, fade_in: 0.0, fade_out: 0.0, normalize: None, denoise: false, track: None }
+        Self {
+            volume: 1.0,
+            muted: false,
+            removed: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            normalize: None,
+            denoise: false,
+            track: None,
+            enhance: None,
+            detached: false,
+        }
+    }
+}
+
+/// "Mejorar voz" con un clic: intensidad 0..1 y, si se midió, el nivel del
+/// original para llevarlo a un nivel de voz parejo (−16 LUFS).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceEnhance {
+    #[serde(default = "voice_amount")]
+    pub amount: f64,
+    #[serde(default)]
+    pub loudness: Option<Loudness>,
+}
+
+fn voice_amount() -> f64 {
+    0.6
+}
+
+/// Punto de la curva de volumen de un clip de audio (t relativo al inicio del clip).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeKey {
+    #[serde(default)]
+    pub id: u64,
+    pub t: f64,
+    /// Ganancia (1 = original, 0..2).
+    pub v: f64,
+}
+
+/// Estado de una pista del timeline (ojo, silenciar, solo, candado, volumen).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackState {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub solo: bool,
+    #[serde(default)]
+    pub locked: bool,
+    #[serde(default = "one")]
+    pub volume: f64,
+}
+
+impl Default for TrackState {
+    fn default() -> Self {
+        Self { name: None, hidden: false, muted: false, solo: false, locked: false, volume: 1.0 }
+    }
+}
+
+/// Estados de todas las pistas (lo que no está, va con los valores por defecto).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Tracks {
+    #[serde(default)]
+    pub video: TrackState,
+    /// Audio de los clips de la pista principal.
+    #[serde(default)]
+    pub video_audio: TrackState,
+    /// Una por fila de capas.
+    #[serde(default)]
+    pub overlays: Vec<TrackState>,
+    #[serde(default)]
+    pub subtitles: TrackState,
+    /// Una por pista de audio (música, efectos, voz…).
+    #[serde(default)]
+    pub audio: Vec<TrackState>,
+}
+
+impl Tracks {
+    pub fn overlay(&self, lane: u32) -> TrackState {
+        self.overlays.get(lane as usize).cloned().unwrap_or_default()
+    }
+    pub fn audio_track(&self, i: u32) -> TrackState {
+        self.audio.get(i as usize).cloned().unwrap_or_default()
+    }
+    /// ¿Alguna pista de audio (o el audio del video) está en solo?
+    pub fn any_solo(&self) -> bool {
+        self.video_audio.solo || self.audio.iter().any(|t| t.solo)
+    }
+    /// Ganancia de una pista de audio según silenciar/solo/volumen.
+    pub fn gain_of(&self, t: &TrackState) -> f64 {
+        if t.muted || (self.any_solo() && !t.solo) { 0.0 } else { t.volume.max(0.0) }
     }
 }
 
@@ -643,6 +748,19 @@ pub struct MusicClip {
     /// Pista de audio (fila) donde está; 0 = la primera.
     #[serde(default)]
     pub track: u32,
+    /// Curva de volumen (suave entre puntos). Vacía = volumen fijo.
+    #[serde(default)]
+    pub volume_keys: Vec<VolumeKey>,
+    #[serde(default)]
+    pub enhance: Option<VoiceEnhance>,
+    /// Si es el audio separado de un clip de la pista principal, su id.
+    #[serde(default)]
+    pub linked_clip: Option<String>,
+    /// Pista del archivo (None = mezclar todas, como en los clips).
+    #[serde(default)]
+    pub source_track: Option<u32>,
+    #[serde(default)]
+    pub muted: bool,
 }
 
 fn music_volume() -> f64 {

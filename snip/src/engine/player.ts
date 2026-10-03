@@ -5,7 +5,8 @@
 import type { Clip, Look, MediaRef, MusicClip, Project } from "../project/model";
 import { canvasFps, LOUDNORM_I } from "../project/model";
 import { activeAt, layout, sourceTime, totalDuration, type Span } from "../project/timeline";
-import { dbToGain, resumeAudio, setGain, setMasterVolume } from "./audio";
+import { dbToGain, resumeAudio, setGain, setMasterVolume, setVoice } from "./audio";
+import { audioTrack, effectiveFades, keyGain, trackGain, voiceParams, type VoiceParams } from "./audioFx";
 import { Renderer, type BlurDraw, type ClipDraw, type FrameDraw, type PipDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
@@ -40,6 +41,8 @@ interface Want {
   rate: number;
   gain: number;
   play: boolean;
+  /** "Mejorar voz" del clip (null = sin procesar). */
+  voice?: VoiceParams | null;
 }
 
 const MAX_SLOTS = 6;
@@ -331,6 +334,7 @@ export class Player {
         rate,
         gain: layerGain * this.clipGain(c, m, u, this.spans[i].duration),
         play: play && forward && c.kind !== "freeze" && rate > 0,
+        voice: c.audio.enhance ? voiceParams(c.audio.enhance) : null,
       });
     };
     if (frame.b !== null) {
@@ -370,8 +374,8 @@ export class Player {
   /** Ganancia del audio del clip en el tiempo local u (volumen, normalizar, fades). */
   private clipGain(c: Clip, m: MediaRef, u: number, d: number): number {
     const a = c.audio;
-    if (!m.hasAudio || a.removed || a.muted || c.kind === "freeze") return 0;
-    let g = a.volume;
+    if (!m.hasAudio || a.removed || a.muted || a.detached || c.kind === "freeze") return 0;
+    let g = a.volume * trackGain(this.project?.tracks, this.project?.tracks?.videoAudio);
     if (a.normalize) {
       const db = Math.min(LOUDNORM_I - a.normalize.inputI, -1 - a.normalize.inputTp);
       g *= dbToGain(db);
@@ -402,6 +406,7 @@ export class Player {
       if (!s) continue;
       keys.add(w.key);
       const el = s.el;
+      setVoice(el, w.voice ?? null);
       setGain(el, w.gain);
       if (w.play) {
         const drift = el.currentTime - w.time;
@@ -448,7 +453,7 @@ export class Player {
     }
     for (const mu of p?.music ?? []) {
       const media = p!.media.find((m) => m.id === mu.mediaId);
-      const url = media ? this.resolver.mediaUrl(media) : null;
+      const url = media ? this.resolver.mediaUrl(media, mu.sourceTrack) : null;
       if (!url) continue;
       let el = this.music.get(mu.id);
       if (!el) {
@@ -481,11 +486,15 @@ export class Player {
   }
 
   private musicGain(mu: MusicClip, t: number): number {
+    const p = this.project;
     const len = mu.outPoint - mu.inPoint;
     const u = t - mu.start;
-    let g = mu.volume;
-    if (mu.fadeIn > 0 && u < mu.fadeIn) g *= Math.max(0, u / mu.fadeIn);
-    if (mu.fadeOut > 0 && u > len - mu.fadeOut) g *= Math.max(0, (len - u) / mu.fadeOut);
+    if (mu.muted) return 0;
+    let g = mu.volume * trackGain(p?.tracks, audioTrack(p?.tracks, mu.track ?? 0)) * keyGain(mu.volumeKeys, u);
+    // Mismos fades que la exportación (con el crossfade corto donde se tocan).
+    const [fadeIn, fadeOut] = p ? effectiveFades(p, mu) : [mu.fadeIn, mu.fadeOut];
+    if (fadeIn > 0 && u < fadeIn) g *= Math.max(0, u / fadeIn);
+    if (fadeOut > 0 && u > len - fadeOut) g *= Math.max(0, (len - u) / fadeOut);
     if (mu.ducking) {
       // Aproximación del sidechaincompress de la exportación: baja ~10 dB con voz.
       const lvl = this.mainLevel(t);
@@ -509,6 +518,7 @@ export class Player {
         continue;
       }
       const target = mu.inPoint + u;
+      setVoice(el, mu.enhance ? voiceParams(mu.enhance) : null);
       setGain(el, this.musicGain(mu, this.time));
       if (playing && this.rate > 0) {
         if (el.paused || Math.abs(el.currentTime - target) > 0.25) {

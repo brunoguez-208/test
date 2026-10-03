@@ -174,7 +174,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] A2. Controles de ventana duplicados al maximizar
 - [x] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
 - [x] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
-- [ ] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
+- [x] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
 - [ ] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
 - [ ] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
 - [ ] Cierre: tests completos + instalador de la tanda A
@@ -265,3 +265,31 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
   principal en ese punto. Fuera del timeline, como antes (ahora también acepta imágenes y
   mezclas de archivos). Tauri da la posición en píxeles físicos: se divide por devicePixelRatio.
 - Modelo (Rust y TS): `ImageLayer.rotation`, `animIn`, `animOut`, `watermark`.
+
+### Notas de A5 (edición de audio)
+- Modelo (Rust y TS): `project.tracks` (estado por pista: nombre, volumen, silenciar, solo,
+  ocultar, bloquear), y en los clips de audio `track`, `volumeKeys`, `enhance`, `linkedClip`,
+  `sourceTrack`, `muted`; en los clips de video `audio.enhance` y `audio.detached`.
+- Los clips de audio se editan como los de video: S divide el audio elegido bajo el playhead
+  (la curva de volumen se reparte), Supr, recortar bordes, mover (también entre pistas,
+  arrastrando hacia arriba/abajo), copiar/pegar, imán y deshacer.
+- "Separar audio" (clic derecho o pestaña Audio): el sonido del clip pasa a su propia pista, en el
+  mismo lugar y tramo, y el clip queda mudo; "Unir audio" lo devuelve (solo clips sin velocidad,
+  reversa ni repeticiones).
+- Varias pistas de audio, cada una con volumen, silenciar y solo (cabecera en el timeline y
+  mezclador en la pestaña Audio; el audio del video es una pista más). Solo = suenan solo las
+  pistas en solo.
+- Curva de volumen sobre la forma de onda: doble clic agrega un punto (la altura es el nivel,
+  0–200 %), se arrastra, doble clic lo borra. Curva suave (smoothstep) idéntica en el preview
+  (`keyGain`) y en la exportación (`volume=eval=frame` con la misma expresión).
+- Crossfade corto automático (30 ms) donde dos audios de la misma pista se tocan.
+- "Mejorar voz": reducción de ruido (afftdn), pasa-altos, menos "barro" en 300 Hz, presencia en
+  3,5 kHz, aire, compresor y nivel de voz a −16 LUFS (con la medición del tramo), con intensidad.
+  Parámetros en `config/voice.json` (Rust + TS). El preview usa los mismos biquads RBJ en
+  WebAudio; el compresor de WebAudio agrega su propio makeup y se compensa midiéndolo una vez.
+- Paridad de audio: `e2e/audio-parity.spec.ts` pasa una señal multitono por el preview
+  (OfflineAudioContext) y por la exportación real: diferencia ≤ 0,2 dB por frecuencia.
+  `tests/audio_integration.rs`: separado = original, curva (−20 dB), volumen/silenciar/solo de
+  pistas, y "Mejorar voz" baja el zumbido de 60 Hz bastante más que la voz.
+- El área de pistas usa `overflow: clip`: antes un `scrollIntoView` (foco por teclado o un
+  elemento más ancho que la vista) podía correr todo el timeline y dejar la pista de video fuera.

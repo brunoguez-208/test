@@ -2,6 +2,7 @@
 //! Así se puede testear (unit + integración con FFmpeg real) en cualquier plataforma.
 
 pub mod audio;
+pub mod audio_fx;
 pub mod color;
 pub mod compile;
 pub mod encoder;

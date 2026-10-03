@@ -4,11 +4,19 @@ import { open, seek } from "./helpers";
 // "Agregar imagen" como capa normal, marca de agua y arrastrar archivos a una pista.
 const project = (page: Page) => page.evaluate(() => window.__snipTest.project());
 
-async function dropOn(page: Page, testId: string, paths: string[], fx = 0.5, rowFromTop = 0) {
-  const box = (await page.getByTestId(testId).boundingBox())!;
-  const pos = { x: box.x + box.width * fx, y: box.y + 4 + rowFromTop };
-  await page.evaluate(([p, q]) => window.__snipMock.dragOver(q as { x: number; y: number }), [paths, pos] as const);
-  await page.evaluate(([p, q]) => window.__snipMock.drop(p as string[], q as { x: number; y: number }), [paths, pos] as const);
+async function dropOn(page: Page, testId: string, paths: string[], fx = 0.5) {
+  // Se mide y se suelta en el mismo instante (el timeline puede reacomodarse).
+  await page.evaluate(
+    async ([id, p, f]) => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const r = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect();
+      const pos = { x: r.left + r.width * (f as number), y: r.top + 4 };
+      await window.__snipMock.dragEnter(p as string[]);
+      await window.__snipMock.dragOver(pos);
+      await window.__snipMock.drop(p as string[], pos);
+    },
+    [testId, paths, fx] as const,
+  );
 }
 
 test("imagen como capa: varias veces, rotación, animación y marca de agua", async ({ page }) => {
@@ -73,7 +81,7 @@ test("arrastrar del Explorador a la pista elegida", async ({ page }) => {
   await dropOn(page, "music-track", ["C:\\Users\\Bruno\\Music\\efecto.wav"], 0.5);
   await expect(page.getByTestId("music-clip")).toHaveCount(2);
   p = (await project(page))!;
-  expect(p.music.map((m) => m.track ?? 0).sort()).toEqual([0, 1]);
+  expect(p.music.map((m) => m.track ?? 0).sort(), JSON.stringify(p.music.map((m) => [m.start, m.outPoint - m.inPoint, m.track]))).toEqual([0, 1]);
   // Video sobre la pista principal → se inserta ahí.
   await dropOn(page, "video-track", ["C:\\Users\\Bruno\\Videos\\Otro 4s.mp4"], 0.02);
   await expect(page.getByTestId("clip")).toHaveCount(2);

@@ -5,7 +5,7 @@ import { totalDuration } from "../../project/timeline";
 import type { Project } from "../../project/model";
 import { fitPps, viewport } from "./zoom";
 
-export const GUTTER = 44;
+export const GUTTER = 96;
 export const PAD_X = 12;
 export const RULER_H = 26;
 export const VIDEO_H = 64;

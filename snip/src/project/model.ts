@@ -55,6 +55,43 @@ export interface ClipAudio {
   denoise: boolean;
   /** Pista del archivo a usar (0 = la primera); null/undefined = mezclar todas. */
   track?: number | null;
+  /** "Mejorar voz" (EQ, compresor, ruido y nivel de micrófono). */
+  enhance?: VoiceEnhance | null;
+  /** El audio se separó a una pista propia: acá no suena. */
+  detached?: boolean;
+}
+
+export interface VoiceEnhance {
+  /** Intensidad 0..1. */
+  amount: number;
+  /** Nivel medido del original (para llevar la voz a −16 LUFS). */
+  loudness?: Loudness | null;
+}
+
+/** Punto de la curva de volumen (t relativo al inicio del clip de audio). */
+export interface VolumeKey {
+  id: number;
+  t: number;
+  v: number;
+}
+
+/** Estado de una pista: ojo, silenciar, solo, candado y volumen. */
+export interface TrackState {
+  name?: string | null;
+  hidden?: boolean;
+  muted?: boolean;
+  solo?: boolean;
+  locked?: boolean;
+  volume?: number;
+}
+
+export interface Tracks {
+  video?: TrackState;
+  /** Audio de los clips de la pista principal. */
+  videoAudio?: TrackState;
+  overlays?: TrackState[];
+  subtitles?: TrackState;
+  audio?: TrackState[];
 }
 
 export interface CropRect {
@@ -244,6 +281,13 @@ export interface MusicClip {
   ducking: boolean;
   /** Pista de audio (fila) donde está; 0 = la primera. */
   track?: number;
+  volumeKeys?: VolumeKey[];
+  enhance?: VoiceEnhance | null;
+  /** Audio separado de un clip de la pista principal (su id). */
+  linkedClip?: string | null;
+  /** Pista del archivo (null = mezclar todas). */
+  sourceTrack?: number | null;
+  muted?: boolean;
 }
 
 export interface Marker {
@@ -351,6 +395,7 @@ export interface Project {
   export: ExportSettings;
   /** Grupos (Ctrl+G): ids que se seleccionan, mueven, copian y borran juntos. */
   groups?: string[][];
+  tracks?: Tracks;
 }
 
 // --------------------------------- Defaults ---------------------------------

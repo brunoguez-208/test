@@ -14,6 +14,7 @@ import {
 import { addMarker, adjacentMarker, deleteClips, deleteRange, splitAt } from "../project/ops";
 import { totalDuration } from "../project/timeline";
 import { zoomTimeline } from "../components/timeline/zoom";
+import { audioUnder, splitMusicAt } from "../project/audioOps";
 import { copy, cut, duplicateSelection, groupSelection, pasteEffectsToSelection, ungroupSelection } from "../store/clipboard";
 
 let shuttleRate = 0;
@@ -100,7 +101,10 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
     }
     case "split":
       try {
-        edit((q) => splitAt(q, t));
+        // Con audio elegido bajo el playhead, S divide ese audio; si no, el clip de video.
+        const audio = audioUnder(p, tab.selection, t);
+        if (audio.length) edit((q) => audio.reduce((r, id) => splitMusicAt(r, id, t), q));
+        else edit((q) => splitAt(q, t));
       } catch (e) {
         notifyEditError(e);
       }

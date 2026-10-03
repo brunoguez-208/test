@@ -1,4 +1,5 @@
 import { setDropGeo } from "./dropTarget";
+import { TrackHeaders } from "./TrackHeaders";
 import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,12 +10,9 @@ import {
   MusicNote216Regular,
   Cut16Regular,
   Image16Regular,
-  Speaker216Regular,
-  VideoClip16Regular,
   ZoomIn16Regular,
   ZoomOut16Regular,
   TextT16Regular,
-  ClosedCaption16Regular,
 } from "@fluentui/react-icons";
 import type { Project } from "../../project/model";
 import { moveMarker, renameMarker } from "../../project/ops";
@@ -343,33 +341,12 @@ export function Timeline({ project }: { project: Project }) {
 
       <div className="flex">
         {/* Íconos de las pistas */}
-        <div className="tl-gutter flex shrink-0 flex-col items-center" style={{ width: GUTTER }}>
-          <div style={{ height: RULER_H }} />
-          {lanes > 0 && (
-            <div className="flex items-start justify-center pt-1.5 text-[var(--text-tertiary)]" style={{ height: lanes * OVERLAY_H }} title="Textos e imágenes">
-              <TextT16Regular />
-            </div>
-          )}
-          {hasCues && (
-            <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: OVERLAY_H }} title="Subtítulos">
-              <ClosedCaption16Regular />
-            </div>
-          )}
-          <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: VIDEO_H }} title="Video">
-            <VideoClip16Regular />
-          </div>
-          <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: AUDIO_H }} title="Audio">
-            <Speaker216Regular />
-          </div>
-          {hasMusic && (
-            <div className="flex items-start justify-center pt-2.5 text-[var(--text-tertiary)]" style={{ height: musicRows(project) * MUSIC_H }} title="Audio">
-              <MusicNote216Regular />
-            </div>
-          )}
+        <div className="tl-gutter flex shrink-0 flex-col" style={{ width: GUTTER }}>
+          <TrackHeaders project={project} lanes={lanes} hasCues={hasCues} rows={musicRows(project)} />
         </div>
         <div
           ref={area}
-          className="tl-area relative min-w-0 flex-1 overflow-hidden"
+          className="tl-area relative min-w-0 flex-1 overflow-clip"
           style={{ height: tracksH }}
           onWheel={onWheel}
           onPointerDown={(e) => {

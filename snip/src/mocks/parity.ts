@@ -2,7 +2,9 @@
 // mismo reproductor y compositor WebGL del preview, sobre videos reales, para
 // compararlos (SSIM) con lo que exporta FFmpeg. Lo usa e2e/parity.spec.ts.
 
-import type { Project } from "../project/model";
+import type { Project, VoiceEnhance } from "../project/model";
+import { buildVoiceChain, compressorTrim } from "../engine/audio";
+import { voiceParams } from "../engine/audioFx";
 import { canvasFps } from "../project/model";
 import { Player } from "../engine/player";
 import { ImageCache, renderDecorSequence, renderZoneAssets } from "../engine/raster";
@@ -12,6 +14,27 @@ export interface ParityApi {
   render(project: Project, urls: Record<string, string>, frames: number[]): Promise<string[]>;
   /** Capas rasterizadas, como las arma la app al exportar (PNG en base64). */
   raster(project: Project, urls: Record<string, string>): Promise<ParityRaster>;
+  /**
+   * "Mejorar voz" del preview sobre una suma de senos (amplitud `amp` cada uno):
+   * renderiza con OfflineAudioContext y devuelve el nivel (dB) de cada tono.
+   */
+  voice(enhance: VoiceEnhance | null, freqs: number[], amp: number, seconds: number): Promise<number[]>;
+}
+
+/** Nivel (dB RMS) de una frecuencia en una señal (Goertzel). Igual en el test de Node. */
+export function goertzelDb(x: Float32Array, rate: number, f: number): number {
+  const w = (2 * Math.PI * f) / rate;
+  const c = 2 * Math.cos(w);
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const s0 = x[i] + c * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  const power = s1 * s1 + s2 * s2 - c * s1 * s2;
+  const amp = (2 * Math.sqrt(Math.max(0, power))) / x.length;
+  return 20 * Math.log10(Math.max(1e-9, amp / Math.SQRT2));
 }
 
 export interface ParityRaster {
@@ -78,6 +101,32 @@ export function installParity() {
         out.pips[id] = { mask: `pipmask${i}.png`, shadow: a.shadow ? `pipshadow${i}.png` : null, width: a.rect.w, height: a.rect.h, x: a.rect.x, y: a.rect.y };
       }
       return out;
+    },
+    async voice(enhance, freqs, amp, seconds) {
+      const rate = 48000;
+      const n = Math.round(rate * seconds);
+      const ctx = new OfflineAudioContext(1, n, rate);
+      const buf = ctx.createBuffer(1, n, rate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        let v = 0;
+        for (const f of freqs) v += amp * Math.sin((2 * Math.PI * f * i) / rate);
+        d[i] = v;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      // La compensación del compresor se mide antes (en la app se aplica apenas está).
+      if (enhance) await compressorTrim(voiceParams(enhance));
+      const chain = enhance ? buildVoiceChain(ctx, voiceParams(enhance)) : [];
+      if (chain.length) {
+        src.connect(chain[0]);
+        chain[chain.length - 1].connect(ctx.destination);
+      } else src.connect(ctx.destination);
+      src.start();
+      const out = (await ctx.startRendering()).getChannelData(0);
+      // Se mide de 1 s a 1 s antes del final (sin transitorios).
+      const win = out.subarray(rate, n - rate);
+      return freqs.map((f) => goertzelDb(win, rate, f));
     },
   };
   (window as unknown as { __snipParity: ParityApi }).__snipParity = api;

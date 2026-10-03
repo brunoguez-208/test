@@ -2,11 +2,14 @@ import { openContextMenu } from "../ui/ContextMenu";
 import { itemMenu } from "../../store/clipboard";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
-import type { Clip, MediaRef, MusicClip, Project } from "../../project/model";
+import type { Clip, MediaRef, MusicClip, Project, VolumeKey } from "../../project/model";
 import { layout } from "../../project/timeline";
 import { snap, snapPoints, trimMusic, updateMusic } from "../../project/ops";
 import { basename } from "../../lib/files";
 import { groupOf, shiftGroup } from "../../project/clipboard";
+import { addVolumeKey, MAX_KEY_GAIN, moveVolumeKey, removeVolumeKey } from "../../project/audioOps";
+import { keyGain } from "../../engine/audioFx";
+import { audioMenu } from "../../store/audio";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor } from "../../store/editor";
 import { AUDIO_H, MUSIC_H, tToX, type Geo } from "./geometry";
 
@@ -89,6 +92,61 @@ export function MainAudioTrack({ project, geo }: { project: Project; geo: Geo })
   );
 }
 
+/** Curva de volumen sobre la forma de onda: puntos arrastrables, curva suave. */
+function VolumeCurve({ mu, w, h, pps, selected, project }: { mu: MusicClip; w: number; h: number; pps: number; selected: boolean; project: Project }) {
+  const keys = mu.volumeKeys ?? [];
+  if (!selected && !keys.length) return null;
+  const yOf = (v: number) => h * (1 - v / MAX_KEY_GAIN);
+  const pts: string[] = [];
+  const step = 3;
+  for (let x = 0; x <= w; x += step) pts.push(`${x.toFixed(1)},${yOf(keyGain(keys, x / pps) * 1).toFixed(1)}`);
+  const drag = (k: VolumeKey) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const svg = (e.currentTarget as SVGElement).ownerSVGElement!;
+    const r = svg.getBoundingClientRect();
+    let started = false;
+    const move = (ev: PointerEvent) => {
+      if (!started) {
+        started = true;
+        gestureStart();
+      }
+      const t = (ev.clientX - r.left) / pps;
+      const v = MAX_KEY_GAIN * (1 - (ev.clientY - r.top) / r.height);
+      edit(() => moveVolumeKey(project, mu.id, k.id, t, Math.abs(v - 1) < 0.04 ? 1 : v));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (started) gestureEnd();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <svg className="tl-volume pointer-events-none absolute inset-0 overflow-visible" width={w} height={h} data-testid="volume-curve">
+      <polyline points={pts.join(" ")} className="tl-volume-line" fill="none" />
+      {keys.map((k) => (
+        <circle
+          key={k.id}
+          cx={k.t * pps}
+          cy={yOf(k.v)}
+          r={4}
+          className="tl-volume-key pointer-events-auto"
+          onPointerDown={drag(k)}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            edit((p) => removeVolumeKey(p, mu.id, k.id));
+          }}
+          data-testid="volume-key"
+        >
+          <title>{`${Math.round(k.v * 100)}% · doble clic para borrar`}</title>
+        </circle>
+      ))}
+    </svg>
+  );
+}
+
 function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicClip; media: MediaRef | undefined; geo: Geo; selected: boolean; project: Project; snapOn: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const peaks = useEditor((s) => (media ? s.waveforms[media.path] : undefined));
@@ -156,7 +214,14 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
       className={`tl-music absolute top-[3px] ${selected ? "is-selected" : ""}`}
       style={{ left: x, width: w, height: MUSIC_H - 6, top: (mu.track ?? 0) * MUSIC_H + 3 }}
       onPointerDown={startDrag("move")}
-      onContextMenu={(e) => openContextMenu(e, itemMenu(mu.id))}
+      onDoubleClick={(e) => {
+        // Doble clic: un punto de volumen ahí (la altura marca el nivel).
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const u = (e.clientX - r.left) / geo.pps;
+        const v = MAX_KEY_GAIN * (1 - (e.clientY - r.top) / r.height);
+        edit((p) => addVolumeKey(p, mu.id, u, (mu.volumeKeys ?? []).length ? undefined : Math.abs(v - 1) < 0.1 ? 1 : v)[0]);
+      }}
+      onContextMenu={(e) => openContextMenu(e, itemMenu(mu.id, audioMenu(mu.id)))}
       data-music-id={mu.id}
       data-track={mu.track ?? 0}
       data-testid="music-clip"
@@ -167,6 +232,8 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
         {vx1 > vx0 && <canvas ref={ref} className="tl-wave tl-wave-music absolute top-0" style={{ left: vx0, width: vx1 - vx0, height: MUSIC_H - 6 }} />}
       </div>
       {w > 60 && <span className="tl-music-name t-caption pointer-events-none absolute left-1.5 top-0.5 truncate">{media ? basename(media.path) : "Música"}</span>}
+      <VolumeCurve mu={mu} w={w} h={MUSIC_H - 6} pps={geo.pps} selected={selected} project={project} />
+      {mu.enhance && <span className="tl-badge t-caption pointer-events-none absolute right-1.5 top-0.5" title="Mejorar voz">VOZ</span>}
       <div className="tl-clip-outline pointer-events-none absolute inset-0 rounded-[4px]" />
       <div className="tl-trim absolute inset-y-0 left-0 w-2 cursor-ew-resize" onPointerDown={startDrag("in")} />
       <div className="tl-trim absolute inset-y-0 right-0 w-2 cursor-ew-resize" onPointerDown={startDrag("out")} />

@@ -1,0 +1,11 @@
+{
+  "_comment": "Mejorar voz: parámetros compartidos por la exportación (snip-core/src/audio_fx.rs) y el preview (src/engine/audioFx.ts). Cada valor se interpola con la intensidad (0..1): base + range * intensidad.",
+  "highpass": { "base": 70, "range": 50, "q": 0.7071 },
+  "mud": { "freq": 300, "q": 1.0, "gainRange": -3.5 },
+  "presence": { "freq": 3500, "q": 0.8, "gainRange": 5.0 },
+  "air": { "freq": 9000, "gainRange": 2.0 },
+  "compressor": { "thresholdBase": -16, "thresholdRange": -8, "ratioBase": 1.5, "ratioRange": 2.5, "attackMs": 10, "releaseMs": 150, "kneeDb": 6 },
+  "denoise": { "base": 4, "range": 14 },
+  "level": { "targetLufs": -16, "minDb": -12, "maxDb": 18 },
+  "crossfade": 0.03
+}

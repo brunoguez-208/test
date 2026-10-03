@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Delete16Regular, MusicNote220Regular, MusicNote216Regular, ArrowExport20Regular } from "@fluentui/react-icons";
-import type { Clip, MusicClip, Project } from "../../project/model";
+import { Delete16Regular, MusicNote220Regular, MusicNote216Regular, ArrowExport20Regular, ArrowSplit20Regular, ArrowJoin20Regular } from "@fluentui/react-icons";
+import type { Clip, MusicClip, Project, TrackState, VoiceEnhance } from "../../project/model";
+import { audioTrackName, canSeparate, setTrackState, trackState, type TrackRef } from "../../project/audioOps";
+import { DEFAULT_VOICE_AMOUNT } from "../../engine/audioFx";
+import { joinSelection, separateSelection, setVoiceAmount, setVoiceEnhance } from "../../store/audio";
 import { MAX_CLIP_VOLUME } from "../../project/model";
 import { deleteClips, updateClip, updateMusic } from "../../project/ops";
 import { clipDuration } from "../../project/timeline";
@@ -16,6 +19,77 @@ import { useSelectedMusic, useTargetClip } from "./useTarget";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
+/** "Mejorar voz" con un clic + intensidad (igual en clips de video y de audio). */
+function VoiceField({ id, enhance }: { id: string; enhance: VoiceEnhance | null | undefined }) {
+  return (
+    <>
+      <Field inline label="Mejorar voz" hint="Saca graves y ruido, da presencia, comprime y lleva la voz a un nivel parejo. Ideal para micrófono.">
+        <Toggle checked={!!enhance} onChange={(v) => void setVoiceEnhance([id], v)} label="Mejorar voz" testId="voice-toggle" />
+      </Field>
+      {enhance && (
+        <Field label="Intensidad" aside={<span className="t-caption tabular text-[var(--text-secondary)]" data-testid="voice-amount-value">{pct(enhance.amount)}</span>}>
+          <RangeSlider
+            label="Intensidad de mejorar voz"
+            value={enhance.amount}
+            min={0}
+            max={1}
+            step={0.05}
+            resetTo={DEFAULT_VOICE_AMOUNT}
+            onStart={gestureStart}
+            onEnd={gestureEnd}
+            onChange={(v) => setVoiceAmount([id], enhance, v)}
+            testId="voice-amount"
+          />
+          {!enhance.loudness && <span className="t-caption text-[var(--text-tertiary)]">Midiendo el nivel…</span>}
+        </Field>
+      )}
+    </>
+  );
+}
+
+/** Volumen, silenciar y solo de cada pista de audio (y nombre). */
+function TracksSection({ project }: { project: Project }) {
+  const rows = Math.max(1, ...project.music.map((m) => (m.track ?? 0) + 1));
+  const list: { r: TrackRef; name: string; id: string }[] = [
+    { r: { kind: "videoAudio" }, name: "Audio del video", id: "video-audio" },
+    ...Array.from({ length: project.music.length ? rows : 0 }, (_, i) => ({ r: { kind: "audio", index: i } as TrackRef, name: audioTrackName(project, i), id: `audio-${i}` })),
+  ];
+  return (
+    <Section title="Pistas de audio" testId="tracks-section">
+      {list.map(({ r, name, id }) => {
+        const st = trackState(project, r);
+        const set = (patch: Partial<TrackState>) => edit((p) => setTrackState(p, r, patch));
+        return (
+          <div key={id} className="flex flex-col gap-1.5" data-testid={`track-row-${id}`}>
+            <div className="flex items-center gap-2">
+              {r.kind === "audio" ? (
+                <input
+                  className="t-body-strong min-w-0 flex-1 bg-transparent outline-none"
+                  value={st.name ?? ""}
+                  placeholder={name}
+                  onChange={(e) => set({ name: e.target.value || null })}
+                  aria-label="Nombre de la pista"
+                  data-testid={`track-name-${id}`}
+                />
+              ) : (
+                <span className="t-body-strong flex-1">{name}</span>
+              )}
+              <span className="t-caption tabular text-[var(--text-secondary)]">{pct(st.volume ?? 1)}</span>
+              <Button variant="subtle" className={`!h-7 !min-w-7 !px-1.5 ${st.muted ? "!text-[#ff99a4]" : ""}`} onClick={() => set({ muted: !st.muted })} aria-pressed={!!st.muted} data-testid={`track-row-mute-${id}`}>
+                M
+              </Button>
+              <Button variant="subtle" className={`!h-7 !min-w-7 !px-1.5 ${st.solo ? "!text-[#ffd60a]" : ""}`} onClick={() => set({ solo: !st.solo })} aria-pressed={!!st.solo} data-testid={`track-row-solo-${id}`}>
+                S
+              </Button>
+            </div>
+            <RangeSlider label={`Volumen de ${name}`} value={st.volume ?? 1} min={0} max={MAX_CLIP_VOLUME} step={0.05} resetTo={1} origin={1} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => set({ volume: v })} testId={`track-volume-${id}`} />
+          </div>
+        );
+      })}
+    </Section>
+  );
+}
+
 function ClipAudioSection({ clip, project }: { clip: Clip; project: Project }) {
   const media = project.media.find((m) => m.id === clip.mediaId);
   const set = (f: (c: Clip) => Clip) => edit((p) => updateClip(p, clip.id, f));
@@ -30,6 +104,16 @@ function ClipAudioSection({ clip, project }: { clip: Clip; project: Project }) {
   }
   const off = a.removed || a.muted;
   const tracks = media.audioTracks ?? 1;
+  if (a.detached) {
+    return (
+      <Section title="Audio del clip" testId="clip-audio">
+        <p className="t-caption text-[var(--text-secondary)]">El audio de este clip está separado en su propia pista: se edita ahí.</p>
+        <Button icon={<ArrowJoin20Regular />} onClick={() => joinSelection([clip.id])} data-testid="join-audio">
+          Unir audio
+        </Button>
+      </Section>
+    );
+  }
   return (
     <Section title="Audio del clip" testId="clip-audio">
       {tracks > 1 && (
@@ -82,6 +166,12 @@ function ClipAudioSection({ clip, project }: { clip: Clip; project: Project }) {
       <Field inline label="Reducir ruido" hint="Saca zumbidos y ruido de fondo. Se procesa aparte.">
         <Toggle checked={a.denoise} onChange={(v) => set((c) => ({ ...c, audio: { ...c.audio, denoise: v } }))} label="Reducir ruido" testId="denoise-toggle" />
       </Field>
+      <VoiceField id={clip.id} enhance={a.enhance} />
+      {canSeparate(project, clip.id) && (
+        <Button icon={<ArrowSplit20Regular />} onClick={() => separateSelection([clip.id])} data-testid="separate-audio">
+          Separar audio
+        </Button>
+      )}
     </Section>
   );
 }
@@ -124,6 +214,24 @@ function MusicSection({ mu, project }: { mu: MusicClip; project: Project }) {
       <Field inline label="Bajar con la voz" hint="La música baja sola cuando suena el audio del video.">
         <Toggle checked={mu.ducking} onChange={(v) => set((m) => ({ ...m, ducking: v }))} label="Bajar la música con la voz" testId="ducking-toggle" />
       </Field>
+      <VoiceField id={mu.id} enhance={mu.enhance} />
+      <Field label="Curva de volumen" hint="Doble clic sobre el audio en el timeline agrega un punto; arrastralo para subir o bajar. Doble clic en un punto lo borra.">
+        <div className="flex items-center gap-2">
+          <span className="t-caption flex-1 text-[var(--text-secondary)]" data-testid="volume-keys-count">
+            {(mu.volumeKeys ?? []).length ? `${(mu.volumeKeys ?? []).length} puntos` : "Sin puntos"}
+          </span>
+          {(mu.volumeKeys ?? []).length > 0 && (
+            <Button variant="subtle" className="!h-7" onClick={() => set((m) => ({ ...m, volumeKeys: [] }))} data-testid="volume-keys-clear">
+              Borrar puntos
+            </Button>
+          )}
+        </div>
+      </Field>
+      {mu.linkedClip && project.clips.some((c) => c.id === mu.linkedClip) && (
+        <Button icon={<ArrowJoin20Regular />} onClick={() => joinSelection([mu.id])} data-testid="join-audio">
+          Unir audio al clip
+        </Button>
+      )}
     </Section>
   );
 }
@@ -138,7 +246,7 @@ export function AudioTab({ project }: { project: Project }) {
           {music ? <MusicSection mu={music} project={project} /> : clip ? <ClipAudioSection clip={clip} project={project} /> : null}
         </motion.div>
       </AnimatePresence>
-      <Section title="Pista de música">
+      <Section title="Pistas de audio extra">
         <Button icon={<MusicNote220Regular />} onClick={() => void addMusicWithDialog()} data-testid="add-music-inspector">
           Agregar música
         </Button>
@@ -146,6 +254,7 @@ export function AudioTab({ project }: { project: Project }) {
           <p className="t-caption text-[var(--text-secondary)]">Tocá un clip de música en el timeline para ajustar su volumen, fades y ducking.</p>
         )}
       </Section>
+      <TracksSection project={project} />
       <Section title="Extraer">
         <Button icon={<ArrowExport20Regular />} onClick={() => void extractAudio()} disabled={!project.clips.length} data-testid="extract-mp3">
           Extraer el audio a MP3

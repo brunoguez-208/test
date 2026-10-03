@@ -148,15 +148,20 @@ fn silence(duration: f64) -> String {
     format!("anullsrc=r=48000:cl=stereo:d={}", num(duration))
 }
 
-/// Filtros de audio propios del clip (normalizar, volumen, fades), ya en el tiempo del timeline.
-fn clip_audio_effects(a: &ClipAudio, duration: f64) -> Vec<String> {
+/// Filtros de audio propios del clip (normalizar, mejorar voz, volumen y el de
+/// la pista, fades), ya en el tiempo del timeline.
+fn clip_audio_effects(a: &ClipAudio, duration: f64, track_gain: f64) -> Vec<String> {
     let mut f = vec![];
     if let Some(l) = &a.normalize {
         f.push(filters::loudnorm_linear(l));
     }
     f.push(s("aresample=48000"));
-    if (a.volume - 1.0).abs() > 1e-6 {
-        f.push(format!("volume={}", trim_num(a.volume)));
+    if let Some(e) = &a.enhance {
+        f.extend(crate::audio_fx::voice_filters(e));
+    }
+    let vol = a.volume * track_gain;
+    if (vol - 1.0).abs() > 1e-6 {
+        f.push(format!("volume={}", trim_num(vol)));
     }
     let fi = a.fade_in.min(duration);
     if fi > EPS {
@@ -196,7 +201,10 @@ fn compile_clip(
         .ok_or_else(|| AppError::with_message(ErrorKind::BadProject, "Un clip usa un archivo que no está en el proyecto."))?;
     let d = span.duration;
     let mut out = ClipOut { video: None, audio: None };
-    let audible = media.has_audio && !clip.audio.removed && !clip.audio.muted;
+    // El audio de la pista principal: silenciado, separado a otra pista, o la
+    // pista "audio del video" apagada (silenciar / otra en solo).
+    let track_gain = p.tracks.gain_of(&p.tracks.video_audio);
+    let audible = media.has_audio && !clip.audio.removed && !clip.audio.muted && !clip.audio.detached && track_gain > 0.0;
 
     if let Some(inter) = inter {
         // Clip ya procesado por la etapa pesada: el archivo es el clip entero.
@@ -214,7 +222,7 @@ fn compile_clip(
             let a = g.label("a");
             if audible && inter.has_audio {
                 let mut chain = vec![s("asetpts=PTS-STARTPTS")];
-                chain.extend(clip_audio_effects(&clip.audio, d));
+                chain.extend(clip_audio_effects(&clip.audio, d, track_gain));
                 chain.push(normalize_audio(d));
                 g.add(&[&format!("{k}:a:0")], &chain.join(","), &a);
             } else {
@@ -311,7 +319,7 @@ fn compile_clip(
                     } else {
                         parts.remove(0)
                     };
-                    let mut chain = clip_audio_effects(&clip.audio, d);
+                    let mut chain = clip_audio_effects(&clip.audio, d, track_gain);
                     chain.push(normalize_audio(d));
                     g.add(&[&joined], &chain.join(","), &a);
                 } else {
@@ -569,7 +577,13 @@ fn mix_music(g: &mut Graph, inputs: &mut Inputs, p: &Project, main: &str, base: 
     let mut sc_iter = sidechains.into_iter();
     for m in &p.music {
         let media = p.media(&m.media_id).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
-        if !media.has_audio {
+        let track_gain = if m.muted { 0.0 } else { p.tracks.gain_of(&p.tracks.audio_track(m.track)) };
+        if !media.has_audio || track_gain <= 0.0 {
+            if m.ducking {
+                if let Some(sc) = sc_iter.next() {
+                    g.sink(&sc);
+                }
+            }
             continue;
         }
         let len = (m.out_point - m.in_point).max(0.0);
@@ -587,24 +601,37 @@ fn mix_music(g: &mut Graph, inputs: &mut Inputs, p: &Project, main: &str, base: 
             continue;
         }
         let k = inputs.add(vec![s("-ss"), num(m.in_point + head_cut), s("-t"), num(visible)], &media.path);
-        let mut chain = vec![s("asetpts=PTS-STARTPTS"), s("aresample=48000"), s("aformat=sample_fmts=fltp:channel_layouts=stereo")];
-        if (m.volume - 1.0).abs() > 1e-6 {
-            chain.push(format!("volume={}", trim_num(m.volume)));
+        let tracks_in = heavy::audio_tracks(media, m.source_track);
+        let (ins, mix) = heavy::mix_inputs(k, &tracks_in);
+        let mut chain: Vec<String> = mix.into_iter().collect();
+        chain.extend([s("asetpts=PTS-STARTPTS"), s("aresample=48000"), s("aformat=sample_fmts=fltp:channel_layouts=stereo")]);
+        if let Some(e) = &m.enhance {
+            chain.extend(crate::audio_fx::voice_filters(e));
         }
-        // Los fades son del clip de música completo (antes del recorte por el rango).
-        if m.fade_in > EPS && head_cut < m.fade_in {
-            chain.push(format!("afade=t=in:st={}:d={}", num(-head_cut), num(m.fade_in)));
+        if let Some(expr) = crate::audio_fx::volume_expr(&m.volume_keys, head_cut) {
+            chain.push(expr);
         }
-        if m.fade_out > EPS {
-            let st = len - m.fade_out - head_cut;
-            chain.push(format!("afade=t=out:st={}:d={}", num(st.max(0.0)), num(m.fade_out.min(len))));
+        let vol = m.volume * track_gain;
+        if (vol - 1.0).abs() > 1e-6 {
+            chain.push(format!("volume={}", trim_num(vol)));
+        }
+        // Los fades son del clip de audio completo (antes del recorte por el rango);
+        // si toca a otro de la misma pista, al menos el crossfade corto automático.
+        let (fade_in, fade_out) = crate::audio_fx::effective_fades(p, m);
+        if fade_in > EPS && head_cut < fade_in {
+            chain.push(format!("afade=t=in:st={}:d={}", num(-head_cut), num(fade_in)));
+        }
+        if fade_out > EPS {
+            let st = len - fade_out - head_cut;
+            chain.push(format!("afade=t=out:st={}:d={}", num(st.max(0.0)), num(fade_out.min(len))));
         }
         let delay_ms = (local_start.max(0.0) * 1000.0).round() as i64;
         if delay_ms > 0 {
             chain.push(format!("adelay=delays={delay_ms}:all=1"));
         }
         let l = g.label("mu");
-        g.add(&[&format!("{k}:a:0")], &chain.join(","), &l);
+        let refs: Vec<&str> = ins.iter().map(String::as_str).collect();
+        g.add(&refs, &chain.join(","), &l);
         if m.ducking {
             let sc = sc_iter.next().unwrap_or_default();
             let d = g.label("md");
@@ -956,6 +983,11 @@ mod tests {
             fade_out: 2.0,
             ducking: true,
             track: 0,
+            volume_keys: vec![],
+            enhance: None,
+            linked_clip: None,
+            source_track: None,
+            muted: false,
         });
         let c = run(&p);
         let last = c.inputs.last().unwrap().join(" ");

@@ -329,6 +329,11 @@ fn music_with_ducking_and_global_fades() {
         fade_out: 1.0,
         ducking: true,
             track: 0,
+            volume_keys: vec![],
+            enhance: None,
+            linked_clip: None,
+            source_track: None,
+            muted: false,
     });
     p.fades = Fades { fade_in: 1.0, fade_out: 1.0 };
     let o = run(p, "music.mp4");
