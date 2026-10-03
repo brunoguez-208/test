@@ -792,6 +792,9 @@ kbd.kbd {
 .tl-audio-clip.is-silent { background: var(--control-fill); }
 .tl-music { cursor: grab; border-radius: 4px; background: color-mix(in srgb, #c86bfa 22%, transparent); color: #d9a3ff; }
 :root[data-theme="light"] .tl-music { color: #8a3bc4; }
+.eyedropper-layer { cursor: crosshair; }
+.eyedropper-hint { background: rgb(0 0 0 / 0.65); color: #fff; }
+.chroma-swatch { border: 1px solid var(--stroke-control); }
 .ramp-curve { background: var(--control-fill); border: 1px solid var(--stroke-control); cursor: crosshair; touch-action: none; }
 .ramp-one { stroke: var(--text-tertiary); stroke-dasharray: 3 3; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .ramp-line { stroke: var(--accent-fill); stroke-width: 2; }

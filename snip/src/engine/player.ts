@@ -7,6 +7,7 @@ import { canvasFps, LOUDNORM_I } from "../project/model";
 import { activeAt, layout, sourceTime, totalDuration, type Span } from "../project/timeline";
 import { dbToGain, resumeAudio, setGain, setMasterVolume, setVoice } from "./audio";
 import { audioTrack, effectiveFades, keyGain, trackGain, voiceParams, type VoiceParams } from "./audioFx";
+import { chromaUniforms } from "./chroma";
 import { Renderer, type BlurDraw, type ClipDraw, type FrameDraw, type PipDraw } from "./renderer";
 import { clipGeometry, zoomAt } from "./effects";
 import { colorPipeline, sharpenWeight } from "./color";
@@ -603,6 +604,39 @@ export class Player {
     }
   }
 
+  private sampleCanvas: HTMLCanvasElement | null = null;
+
+  /**
+   * Color del video de un PiP (sin la llave aplicada) en el punto (fx, fy) del
+   * lienzo, en fracciones 0..1. Promedia 7×7 px del original. null = fuera del PiP.
+   */
+  pipColorAt(id: string, fx: number, fy: number): [number, number, number] | null {
+    const p = this.project;
+    const o = p?.overlays.find((x) => x.id === id);
+    if (!p || !o || o.type !== "video") return null;
+    const m = p.media.find((x) => x.id === o.mediaId);
+    const s = this.slots.find((x) => x.owner === `pip:${o.id}`);
+    if (!m || !s || s.el.readyState < 2 || !s.el.videoWidth) return null;
+    const r = pipRect(o, m, p.canvas.width, p.canvas.height);
+    const lx = (fx * p.canvas.width - r.x) / r.w;
+    const ly = (fy * p.canvas.height - r.y) / r.h;
+    if (lx < 0 || ly < 0 || lx > 1 || ly > 1) return null;
+    const N = 7;
+    const vx = Math.min(s.el.videoWidth - N, Math.max(0, Math.round(lx * s.el.videoWidth - N / 2)));
+    const vy = Math.min(s.el.videoHeight - N, Math.max(0, Math.round(ly * s.el.videoHeight - N / 2)));
+    const c = (this.sampleCanvas ??= document.createElement("canvas"));
+    c.width = N;
+    c.height = N;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(s.el, vx, vy, N, N, 0, 0, N, N);
+    const d = ctx.getImageData(0, 0, N, N).data;
+    const sum = [0, 0, 0];
+    for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k];
+    const n = d.length / 4;
+    return [sum[0] / n, sum[1] / n, sum[2] / n];
+  }
+
   private shadowCanvases = new Map<string, { canvas: HTMLCanvasElement; key: string }>();
 
   /** Zonas y PiP del cuadro actual, en píxeles del render. */
@@ -645,7 +679,7 @@ export class Player {
         }
         shadow = { source: sc.canvas, key: `${o.id}#${sc.key}` };
       }
-      pips.push({ source: s.el, rect, radius, shadow });
+      pips.push({ source: s.el, rect, radius, shadow, chroma: chromaUniforms(o.chroma) });
     }
     return { blurs, pips };
   }

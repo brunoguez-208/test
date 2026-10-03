@@ -575,7 +575,7 @@ fn image_effects_layers_zones_and_pip_together() {
         start: 2.0,
         duration: 3.0,
         lane: 1,
-        content: OverlayContent::Video(PipLayer { media_id: "c".into(), in_point: 0.5, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.7 }),
+        content: OverlayContent::Video(PipLayer { media_id: "c".into(), in_point: 0.5, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.7, chroma: None }),
     });
     let mut j = job(p, "tanda2.mp4");
     let mut pips = std::collections::HashMap::new();
@@ -636,4 +636,51 @@ fn luma_free_audio_level(p: &str) -> f64 {
         .output()
         .unwrap();
     String::from_utf8_lossy(&out.stderr).lines().filter_map(|l| l.split("RMS level dB:").nth(1)).filter_map(|v| v.trim().parse().ok()).next_back().unwrap_or(-120.0)
+}
+
+#[test]
+fn pip_chroma_key_shows_the_background_and_keeps_the_subject() {
+    guard!();
+    use snip_core::project_export::{PipSpec, RasterSpec};
+    let r = fx().root.join("chroma");
+    std::fs::create_dir_all(&r).unwrap();
+    let rp = |n: &str| r.join(n).to_string_lossy().into_owned();
+    // Fondo azul; el PiP: pantalla verde con un cuadrado rojo al medio.
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=0x2040c0:s=640x360:r=30:d=3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &rp("fondo.mp4")]);
+    gen(&fx().tools, &[
+        "-f", "lavfi", "-i", "color=c=0x00b140:s=640x360:r=30:d=3,drawbox=x=220:y=120:w=200:h=120:color=0xd02020:t=fill",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", &rp("verde.mp4"),
+    ]);
+    gen(&fx().tools, &["-f", "lavfi", "-i", "color=c=white:s=640x360", "-frames:v", "1", &rp("mask.png")]);
+    let px = |file: &str, x: u32, y: u32| {
+        let out = Command::new(&fx().tools.ffmpeg)
+            .args(["-v", "error", "-ss", "1", "-i", file, "-frames:v", "1", "-vf", &format!("crop=8:8:{x}:{y},scale=1:1,format=rgb24"), "-f", "rawvideo", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        (out[0] as i32, out[1] as i32, out[2] as i32)
+    };
+    for (chroma, name) in [(None, "sin-llave.mp4"), (Some(ChromaKey { color: "#00b140".into(), similarity: 0.15, smoothness: 0.08, despill: 0.5 }), "con-llave.mp4")] {
+        let mut p = project(vec![media("f", "chroma/fondo.mp4"), media("g", "chroma/verde.mp4")], vec![clip("c1", "f", 0.0, 3.0)]);
+        p.overlays.push(Overlay {
+            id: "pip".into(),
+            start: 0.0,
+            duration: 3.0,
+            lane: 0,
+            content: OverlayContent::Video(PipLayer { media_id: "g".into(), in_point: 0.0, x: 0.5, y: 0.5, width: 1.0, radius: 0.0, shadow: false, volume: 0.0, chroma: chroma.clone() }),
+        });
+        let mut j = job(p, name);
+        let mut pips = std::collections::HashMap::new();
+        pips.insert("pip".to_string(), PipSpec { mask: rp("mask.png"), shadow: None, width: 640, height: 360, x: 0, y: 0, shadow_x: 0, shadow_y: 0 });
+        j.raster = Some(RasterSpec { dir: None, decor: None, masks: Default::default(), pips });
+        let o = run_job(j);
+        let (r0, g0, b0) = px(&o.output, 40, 40);
+        let (r1, g1, b1) = px(&o.output, 316, 176);
+        assert!(r1 > 170 && g1 < 70 && b1 < 70, "{name}: el sujeto queda rojo: {r1},{g1},{b1}");
+        if chroma.is_some() {
+            assert!(b0 > 160 && g0 < 100 && r0 < 70, "{name}: se ve el fondo azul: {r0},{g0},{b0}");
+        } else {
+            assert!(g0 > 140 && b0 < 100, "{name}: sin llave queda verde: {r0},{g0},{b0}");
+        }
+    }
 }

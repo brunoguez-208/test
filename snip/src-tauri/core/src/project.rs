@@ -709,6 +709,21 @@ pub struct PipLayer {
     pub shadow: bool,
     #[serde(default)]
     pub volume: f64,
+    /// Chroma key (pantalla verde/azul).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chroma: Option<ChromaKey>,
+}
+
+/// Quita un color de fondo. `similarity` y `smoothness` como en `chromakey`
+/// de FFmpeg (distancia en UV); `despill` 0..1 saca el reflejo del color.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChromaKey {
+    pub color: String,
+    pub similarity: f64,
+    pub smoothness: f64,
+    #[serde(default)]
+    pub despill: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -219,6 +219,20 @@ export const PIP_FRAG = `${COMMON}
 uniform sampler2D uTex;
 uniform vec4 uRect;          // x, y, w, h en píxeles
 uniform float uRadius;
+// Chroma key (como chromakey + despill de FFmpeg): uKey = (U, V) del color en 0..255,
+// uKeyOn, uSim, uBlend; uDespill (0 = no) y uSpill (0 verde, 1 azul).
+uniform vec2 uKey;
+uniform float uKeyOn;
+uniform float uSim;
+uniform float uBlend;
+uniform float uDespill;
+uniform float uSpill;
+vec2 uvOf(vec3 c) {
+  vec3 r = c * 255.0;
+  float u = (-0.16874 * r.r - 0.33126 * r.g + 0.5 * r.b) * 224.0 / 255.0 + 128.0;
+  float v = (0.5 * r.r - 0.41869 * r.g - 0.08131 * r.b) * 224.0 / 255.0 + 128.0;
+  return vec2(u, v);
+}
 void main() {
   vec2 p = pixel() + 0.5;
   vec2 local = p - uRect.xy;
@@ -229,6 +243,30 @@ void main() {
   float a = clamp(0.5 - d, 0.0, 1.0);
   if (a <= 0.0) discard;
   vec3 c = texture(uTex, local / uRect.zw).rgb;
+  if (uKeyOn > 0.5) {
+    // Distancia UV promediada en 3×3 (vecinos del plano de croma 4:2:0 = 2 px).
+    float diff = 0.0;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        vec2 o = clamp(local + vec2(float(dx), float(dy)) * 2.0, vec2(0.5), uRect.zw - 0.5);
+        vec2 kv = uvOf(texture(uTex, o / uRect.zw).rgb) - uKey;
+        diff += sqrt(dot(kv, kv) / (255.0 * 255.0 * 2.0));
+      }
+    }
+    diff /= 9.0;
+    float k = uBlend > 0.0001 ? clamp((diff - uSim) / uBlend, 0.0, 1.0) : (diff > uSim ? 1.0 : 0.0);
+    a *= k;
+    if (a <= 0.0) discard;
+    if (uDespill > 0.0 && uSpill > -0.5) {
+      if (uSpill < 0.5) {
+        float s = max(c.g - (c.r * 0.5 + c.b * 0.5), 0.0);
+        c.g = max(c.g - s * uDespill, 0.0);
+      } else {
+        float s = max(c.b - (c.r * 0.5 + c.g * 0.5), 0.0);
+        c.b = max(c.b - s * uDespill, 0.0);
+      }
+    }
+  }
   outColor = vec4(c * a, a);
 }
 `;

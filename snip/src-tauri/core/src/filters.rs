@@ -288,7 +288,19 @@ pub fn apply_overlays(
         let pm = g.label("pm");
         g.add(&[&format!("{mk}:v:0")], &format!("format=gray,scale={}:{},fps={fps}", spec.width, spec.height), &pm);
         let pa = g.label("pa");
-        g.add(&[&pv, &pm], &format!("alphamerge,setpts=PTS+{}/TB", num(offset)), &pa);
+        match v.chroma.as_ref().and_then(crate::chroma::filters) {
+            // Con chroma key: alfa = máscara × llave (como el shader del preview).
+            Some(key) => {
+                let (pc, pk) = (g.label("pc"), g.label("pk"));
+                g.add(&[&pv], &format!("{key},split"), &format!("{pc}][{pk}"));
+                let ka = g.label("ka");
+                g.add(&[&pk], "alphaextract", &ka);
+                let am = g.label("am");
+                g.add(&[&ka, &pm], "blend=all_mode=multiply", &am);
+                g.add(&[&pc, &am], &format!("alphamerge,setpts=PTS+{}/TB", num(offset)), &pa);
+            }
+            None => g.add(&[&pv, &pm], &format!("alphamerge,setpts=PTS+{}/TB", num(offset)), &pa),
+        }
         let enable = format!("enable='between(t,{},{})'", num(offset), num(offset + dur - EPS_T));
         if let Some(shadow) = &spec.shadow {
             let sk = inputs.add(vec!["-loop".into(), "1".into(), "-t".into(), num(dur)], shadow);
@@ -458,7 +470,7 @@ mod tests {
     #[test]
     fn pip_is_cut_to_the_window_and_mixes_audio() {
         let mut p = with_overlay(
-            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 2.0, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.5 }),
+            OverlayContent::Video(PipLayer { media_id: "m1".into(), in_point: 2.0, x: 0.8, y: 0.8, width: 0.3, radius: 0.1, shadow: true, volume: 0.5, chroma: None }),
             1.0,
             4.0,
         );
@@ -486,6 +498,33 @@ mod tests {
             v.volume = 0.0;
         }
         assert!(pip_audio(&mut Graph::new(), &mut Inputs::new(), &p, 0.0, 10.0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn pip_chroma_multiplies_the_key_with_the_mask() {
+        let mut p = with_overlay(
+            OverlayContent::Video(PipLayer {
+                media_id: "m1".into(),
+                in_point: 0.0,
+                x: 0.5,
+                y: 0.5,
+                width: 0.3,
+                radius: 0.1,
+                shadow: false,
+                volume: 0.0,
+                chroma: Some(ChromaKey { color: "#00b140".into(), similarity: 0.2, smoothness: 0.1, despill: 0.6 }),
+            }),
+            0.0,
+            5.0,
+        );
+        let mut r = crate::compile::RasterInputs::default();
+        r.pip.insert("o1".into(), crate::compile::PipRaster { mask: "/r/m.png".into(), shadow: None, width: 384, height: 216, x: 10, y: 10, shadow_x: 0, shadow_y: 0 });
+        p.overlays[0].id = "o1".into();
+        let (mut g, mut inputs) = (Graph::new(), Inputs::new());
+        apply_overlays(&mut g, &mut inputs, &p, Some(&r), "v", 0.0, 5.0).unwrap();
+        let s = g.build();
+        assert!(s.contains("chromakey=color=0x00b140:similarity=0.2:blend=0.1,format=rgba,despill=type=green"), "{s}");
+        assert!(s.contains("alphaextract") && s.contains("blend=all_mode=multiply"), "{s}");
     }
 
     #[test]

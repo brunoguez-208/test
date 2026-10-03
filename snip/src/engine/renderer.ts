@@ -3,6 +3,7 @@
 
 import { BLIT_FRAG, BLUR_H_FRAG, BLUR_V_FRAG, CLIP_FRAG, LAYER_FRAG, OVERLAY_FRAG, PIP_FRAG, PIXELATE_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
 import type { ColorPipeline } from "./color";
+import type { ChromaUniforms } from "./chroma";
 
 export interface ClipDraw {
   source: TexImageSource;
@@ -37,6 +38,7 @@ export interface PipDraw {
   rect: { x: number; y: number; w: number; h: number };
   radius: number;
   shadow: { source: TexImageSource; key: string } | null;
+  chroma?: ChromaUniforms | null;
 }
 
 export interface FrameDraw {
@@ -118,7 +120,7 @@ export class Renderer {
     this.blurHProg = this.program(BLUR_H_FRAG, ["uSize", "uSrc", "uZone", "uR"]);
     this.blurVProg = this.program(BLUR_V_FRAG, ["uSize", "uBase", "uH", "uZone", "uR"]);
     this.pixProg = this.program(PIXELATE_FRAG, ["uSize", "uBase", "uZone", "uN"]);
-    this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius"]);
+    this.pipProg = this.program(PIP_FRAG, ["uSize", "uTex", "uRect", "uRadius", "uKey", "uKeyOn", "uSim", "uBlend", "uDespill", "uSpill"]);
     this.layerProg = this.program(LAYER_FRAG, ["uSize", "uLayer"]);
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
@@ -356,6 +358,13 @@ export class Renderer {
       gl.uniform1i(P.loc.uTex, 0);
       gl.uniform4f(P.loc.uRect, pip.rect.x, pip.rect.y, pip.rect.w, pip.rect.h);
       gl.uniform1f(P.loc.uRadius, pip.radius);
+      const k = pip.chroma;
+      gl.uniform1f(P.loc.uKeyOn, k ? 1 : 0);
+      gl.uniform2f(P.loc.uKey, k?.uv[0] ?? 0, k?.uv[1] ?? 0);
+      gl.uniform1f(P.loc.uSim, k?.similarity ?? 0);
+      gl.uniform1f(P.loc.uBlend, k?.smoothness ?? 0);
+      gl.uniform1f(P.loc.uDespill, k?.despill ?? 0);
+      gl.uniform1f(P.loc.uSpill, k?.spill ?? -1);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disable(gl.BLEND);
     });

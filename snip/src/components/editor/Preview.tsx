@@ -13,6 +13,43 @@ import { Tooltip } from "../ui/Tooltip";
 import { clipGeometry } from "../../project/geometry";
 import { CropEditor, ZoomEditor } from "./ImageEditors";
 import { OverlayEditor, selectOverlayAt } from "./OverlayEditor";
+import { setChroma } from "../inspector/video/ChromaEditor";
+import { toHex } from "../../engine/chroma";
+
+/** Gotero del chroma key: un clic en el PiP toma el color de fondo; Esc cancela. */
+function EyedropperLayer({ id }: { id: string }) {
+  const [hint, setHint] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      useEditor.setState({ eyedropper: null });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  return (
+    <div
+      className="eyedropper-layer absolute inset-0 z-20"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        const rgb = player().pipColorAt(id, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+        if (!rgb) {
+          setHint("Tocá dentro del video del PiP");
+          return;
+        }
+        setChroma(id, (k) => (k ? { ...k, color: toHex(rgb) } : k));
+        useEditor.setState({ eyedropper: null });
+      }}
+      data-testid="eyedropper-layer"
+    >
+      <span className="eyedropper-hint t-caption pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-[4px] px-2 py-1">{hint ?? "Tocá el color de fondo del PiP · Esc cancela"}</span>
+    </div>
+  );
+}
 
 /** Preview: canvas WebGL encajado con la proporción del lienzo. */
 export function Preview({ project }: { project: Project }) {
@@ -26,6 +63,7 @@ export function Preview({ project }: { project: Project }) {
   const proxies = useEditor((s) => s.proxies);
   const [glFailed, setGlFailed] = useState(false);
   const imageEdit = useEditor((s) => s.imageEdit);
+  const eyedropper = useEditor((s) => s.eyedropper);
   const overlaySelected = useEditor((s) => {
     const sel = activeTab(s)?.selection ?? [];
     return project.overlays.some((o) => sel.includes(o.id));
@@ -94,6 +132,7 @@ export function Preview({ project }: { project: Project }) {
           data-testid="preview-canvas"
         />
         {!imageEdit && <OverlayEditor project={project} />}
+        {eyedropper && <EyedropperLayer id={eyedropper} />}
         {cropping && <CropEditor clip={editClip} media={editMedia} />}
         {imageEdit?.mode === "zoom" && editClip && <ZoomEditor clip={editClip} keyId={imageEdit.keyId} />}
 

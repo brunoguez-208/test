@@ -11,6 +11,7 @@ import { Segmented } from "../../ui/Segmented";
 import { Toggle } from "../../ui/Toggle";
 import { Tooltip } from "../../ui/Tooltip";
 import { Field, Section } from "../Field";
+import { ChromaEditor } from "./ChromaEditor";
 
 type BlurOverlay = Overlay & BlurLayer & { type: "blur" };
 type PipOverlay = Overlay & PipLayer;
@@ -104,6 +105,7 @@ function PipEditor({ project, o }: { project: Project; o: PipOverlay }) {
           <RangeSlider label="Desde qué segundo del video" value={o.inPoint} min={0} max={maxIn} step={0.1} resetTo={0} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setOverlay<PipOverlay>(o.id, (z) => ({ ...z, inPoint: v }))} testId="pip-in" />
         </Field>
       )}
+      <ChromaEditor o={o} />
       <div className="flex items-center justify-between">
         <p className="t-caption text-[var(--text-secondary)]">Arrastralo en la vista previa; la esquina lo agranda.</p>
         <RemoveButton id={o.id} label="Quitar el PiP" />

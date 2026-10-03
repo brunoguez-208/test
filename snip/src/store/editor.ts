@@ -114,6 +114,8 @@ export interface EditorState {
   libraryOpen: boolean;
   /** Visor de origen abierto (id del medio). */
   sourceMedia: string | null;
+  /** Gotero del chroma key activo sobre este PiP (id de la capa). */
+  eyedropper: string | null;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -153,6 +155,7 @@ export const initialState: EditorState = {
   exportAsSnip: false,
   libraryOpen: false,
   sourceMedia: null,
+  eyedropper: null,
   toasts: [],
   focused: true,
   confirm: null,

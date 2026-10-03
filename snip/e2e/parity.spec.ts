@@ -56,6 +56,8 @@ test.beforeAll(() => {
   makeVideo("a.webm", "testsrc2=s=640x360:r=30:d=4");
   makeVideo("b.webm", "testsrc2=s=640x360:r=30:d=4,hue=h=140,hflip");
   makeVideo("c.webm", "testsrc=s=360x360:r=30:d=4");
+  // Pantalla verde con un sujeto que se mueve (para el chroma key).
+  makeVideo("verde.webm", "color=c=0x00b140:s=640x360:r=30:d=4[bg];testsrc2=s=220x160:r=30:d=4[fg];[bg][fg]overlay=x='120+60*t':y=100[out0]");
   // Logo con transparencia (PNG).
   ff(["-loglevel", "error", "-f", "lavfi", "-i", "color=c=0xFF6A00@0.85:s=240x120,format=rgba,drawbox=x=20:y=20:w=80:h=80:color=white@1:t=fill", "-frames:v", "1", join(dir, "logo.png")]);
   media["logo.png"] = JSON.parse(snipRender(["probe", join(dir, "logo.png"), "logo"]));
@@ -303,4 +305,20 @@ test("paridad: zonas desenfocadas y pixeladas (con keyframes) y picture-in-pictu
   [p, pip] = addPip(p, media["c.webm"], 2);
   p = updateOverlay(p, pip, (o) => (o.type === "video" ? { ...o, inPoint: 1, duration: 3, radius: 0.12 } : o));
   await check(page, p, { "solo-desenfoque": 20, "zona-moviendose": 50, "pixelado": 60, "pip-entrando": 61, "pip-y-zonas": 80, "pip-solo": 140 }, "zonas", 0.95);
+});
+
+test("paridad: chroma key en un PiP (verde con sujeto, despill y borde suave)", async ({ page }) => {
+  test.setTimeout(300_000);
+  let p = base([["a.webm", 0, 4]]);
+  let pip: string;
+  [p, pip] = addPip(p, media["verde.webm"], 0);
+  p = updateOverlay(p, pip, (o) =>
+    o.type === "video" ? { ...o, duration: 4, width: 0.6, x: 0.5, y: 0.5, radius: 0.05, shadow: false, chroma: { color: "#00b140", similarity: 0.12, smoothness: 0.1, despill: 0.7 } } : o,
+  );
+  await check(page, p, { "inicio": 5, "medio": 60, "final": 110 }, "chroma", 0.95);
+  // Control: sin la llave el PiP tapa el fondo (el SSIM con el export con llave cae).
+  const [keyed] = exportedFrames(join(dir, "chroma.mp4"), [60], "chroma-ctl");
+  const plain = updateOverlay(p, pip, (o) => (o.type === "video" ? { ...o, chroma: null } : o));
+  const [prev] = await previewFrames(page, plain, [60], "chroma-sin");
+  expect(compare(prev, keyed)).toBeLessThan(0.9);
 });

@@ -333,7 +333,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] B1. Biblioteca de medios
 - [x] B2. Visor de origen
 - [x] B3. Rampas de velocidad
-- [ ] B4. Chroma key
+- [x] B4. Chroma key
 - [ ] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
 - [ ] B6. Máscaras
 - [ ] B7. Herramientas automáticas (jugadas, silencios, beats)
@@ -371,3 +371,14 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Dividir, recortar y "Pegar efectos" conservan la curva (se reparte, corre o escala).
 - Tests: unitarios Rust (curva, inversa, setpts, audio), integración (largo con y sin audio,
   mudo vs. tono), Vitest (`ramp.test.ts`), Playwright (`ramp.spec.ts`) y paridad (`parity.spec.ts`).
+
+### Notas de B4 (chroma key)
+- En el picture-in-picture (pestaña Video → el PiP elegido → "Chroma key"): gotero sobre la
+  vista previa (toma el color del video original del PiP, promedio 7×7; Esc cancela),
+  similitud, suavidad del borde y "Quitar reflejo" (solo si el fondo es verde o azul).
+  Va en el PiP porque en la pista principal no hay nada detrás que mostrar.
+- Exportación: `chromakey` (distancia UV, BT.601) + `despill`, y el alfa = llave × máscara
+  de esquinas. El shader del preview implementa las mismas fórmulas (3×3 en el plano de croma).
+- Paridad SSIM 0,988–0,991 (verde con sujeto en movimiento, borde suave y despill); el control
+  sin llave cae por debajo de 0,9. Test de integración con píxeles (fondo azul visible, sujeto
+  rojo intacto), Vitest (`engine/chroma.test.ts`) y Playwright (`chroma.spec.ts`).

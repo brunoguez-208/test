@@ -247,6 +247,15 @@ export interface ImageLayer {
   /** Marca de agua: dura todo el video (se ajusta sola si cambia el largo). */
   watermark?: boolean;
 }
+/** Chroma key: quita un color de fondo (como `chromakey` + `despill` de FFmpeg). */
+export interface ChromaKey {
+  color: string;
+  similarity: number;
+  smoothness: number;
+  despill: number;
+}
+export const DEFAULT_CHROMA: ChromaKey = { color: "#00b140", similarity: 0.15, smoothness: 0.08, despill: 0.5 };
+
 export interface PipLayer {
   type: "video";
   mediaId: string;
@@ -257,6 +266,7 @@ export interface PipLayer {
   radius: number;
   shadow: boolean;
   volume: number;
+  chroma?: ChromaKey | null;
 }
 export interface Rect {
   x: number;
