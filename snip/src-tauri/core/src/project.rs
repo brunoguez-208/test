@@ -66,6 +66,9 @@ pub struct Project {
     pub view: ViewState,
     #[serde(default)]
     pub export: ExportSettings,
+    /// Grupos (Ctrl+G): ids que se seleccionan, mueven, copian y borran juntos.
+    #[serde(default)]
+    pub groups: Vec<Vec<String>>,
 }
 
 impl Project {
@@ -627,6 +630,9 @@ pub struct MusicClip {
     /// Bajar la música cuando suena el audio del video (sidechain).
     #[serde(default)]
     pub ducking: bool,
+    /// Pista de audio (fila) donde está; 0 = la primera.
+    #[serde(default)]
+    pub track: u32,
 }
 
 fn music_volume() -> f64 {

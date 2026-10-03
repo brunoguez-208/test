@@ -25,7 +25,13 @@ export type ShortcutAction =
   | { type: "help" }
   | { type: "home" }
   | { type: "end" }
-  | { type: "escape" };
+  | { type: "escape" }
+  | { type: "copy" }
+  | { type: "cut" }
+  | { type: "duplicate" }
+  | { type: "pasteEffects" }
+  | { type: "group" }
+  | { type: "ungroup" };
 
 export interface KeyLike {
   key: string;
@@ -60,7 +66,12 @@ export function shortcutFor(e: KeyLike, target?: TargetLike | null): ShortcutAct
   const ctrl = !!(e.ctrlKey || e.metaKey);
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
 
+  if (ctrl && e.altKey && !e.shiftKey && key === "v") return { type: "pasteEffects" };
   if (ctrl && !e.altKey) {
+    if (key === "c") return { type: "copy" };
+    if (key === "x") return { type: "cut" };
+    if (key === "d") return { type: "duplicate" };
+    if (key === "g") return e.shiftKey ? { type: "ungroup" } : { type: "group" };
     if (key === "Tab") return e.shiftKey ? { type: "prevTab" } : { type: "nextTab" };
     if (key === "e") return { type: "export" };
     if (key === "o") return { type: "open" };
@@ -127,6 +138,17 @@ export const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
       ["Ctrl + Shift + M", "Ir al marcador anterior"],
       ["Ctrl + Z", "Deshacer"],
       ["Ctrl + Y", "Rehacer"],
+    ],
+  },
+  {
+    title: "Portapapeles",
+    items: [
+      ["Ctrl + C / X", "Copiar / cortar la selección"],
+      ["Ctrl + V", "Pegar en el playhead (también capturas, texto y archivos)"],
+      ["Ctrl + D", "Duplicar a continuación"],
+      ["Ctrl + Alt + V", "Pegar solo los efectos"],
+      ["Ctrl + G", "Agrupar"],
+      ["Ctrl + Shift + G", "Desagrupar"],
     ],
   },
   {

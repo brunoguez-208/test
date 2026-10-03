@@ -677,6 +677,33 @@ pub fn files_exist(paths: Vec<String>) -> Vec<bool> {
     paths.iter().map(|p| Path::new(p).is_file()).collect()
 }
 
+/// Archivos copiados en el Explorador (para pegarlos en el timeline).
+#[tauri::command]
+pub fn clipboard_files() -> Vec<String> {
+    crate::system::clipboard_files()
+}
+
+/// Guarda una imagen pegada (captura con Win+Shift+S, imagen copiada de la
+/// web) como PNG en la carpeta de datos, para usarla como capa.
+#[tauri::command]
+pub fn save_clipboard_image(app: AppHandle, state: State<'_, AppState>, data: String, ext: String) -> CmdResult<String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| AppError::with_detail(ErrorKind::Corrupt, e.to_string()))?;
+    let ext = match ext.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => "jpg",
+        "webp" => "webp",
+        _ => "png",
+    };
+    let dir = state.data_dir.join("pegados");
+    std::fs::create_dir_all(&dir).map_err(|e| AppError::from_io(&e))?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let path = dir.join(format!("imagen-pegada-{stamp}.{ext}"));
+    std::fs::write(&path, bytes).map_err(|e| AppError::from_io(&e))?;
+    allow_asset(&app, &path);
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Muestra el log de la app en el Explorador (para mandar en un reporte).
 #[tauri::command]
 pub fn reveal_log() -> CmdResult<String> {

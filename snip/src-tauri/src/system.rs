@@ -85,6 +85,38 @@ pub fn hide_native_caption_buttons(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Archivos copiados en el Explorador (formato CF_HDROP del portapapeles).
+#[cfg(windows)]
+pub fn clipboard_files() -> Vec<String> {
+    use windows::Win32::Foundation::{HANDLE, HWND};
+    use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard};
+    use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+    const CF_HDROP: u32 = 15;
+    let mut out = vec![];
+    unsafe {
+        if IsClipboardFormatAvailable(CF_HDROP).is_err() || OpenClipboard(Some(HWND::default())).is_err() {
+            return out;
+        }
+        if let Ok(HANDLE(h)) = GetClipboardData(CF_HDROP) {
+            let drop = HDROP(h);
+            let n = DragQueryFileW(drop, u32::MAX, None);
+            for i in 0..n {
+                let len = DragQueryFileW(drop, i, None) as usize;
+                let mut buf = vec![0u16; len + 1];
+                let got = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
+                out.push(String::from_utf16_lossy(&buf[..got]));
+            }
+        }
+        let _ = CloseClipboard();
+    }
+    out
+}
+
+#[cfg(not(windows))]
+pub fn clipboard_files() -> Vec<String> {
+    vec![]
+}
+
 #[cfg(not(windows))]
 pub fn hide_native_caption_buttons(_window: &tauri::WebviewWindow) {}
 

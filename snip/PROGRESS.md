@@ -172,7 +172,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 
 - [x] A1. Grabaciones de NVIDIA (ShadowPlay / Instant Replay) que fallaban con NVENC
 - [x] A2. Controles de ventana duplicados al maximizar
-- [ ] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
+- [x] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
 - [ ] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
 - [ ] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
 - [ ] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
@@ -228,3 +228,24 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Test de Playwright: un solo juego, alineado al borde derecho y sin tapar la barra en normal,
   maximizado y restaurado, y sin duplicarse al recargar. La verificación visual real (Windows 11
   con Mica, maximizar/restaurar/Snap) queda en el checklist manual.
+
+### Notas de A3 (portapapeles y grupos)
+- `project/clipboard.ts` (puro, con tests): copiar guarda clips de la pista principal, capas,
+  audio y subtítulos con sus tiempos relativos, efectos, keyframes y estilos, más los medios que
+  usan. Pegar en el playhead: los clips se insertan ahí (si cae dentro de un clip, se divide); lo
+  demás conserva sus distancias y su fila si está libre (si no, la primera libre). Ids nuevos,
+  todo es una edición (Ctrl+Z). Ctrl+D duplica a continuación; Ctrl+X corta.
+- Lo copiado también va como JSON al portapapeles del sistema: se puede pegar en otra pestaña.
+- Pegar desde Windows (`store/clipboard.ts`): primero lo copiado en Snip; si no, archivos del
+  Explorador (CF_HDROP leído en Rust: videos a la pista principal, audio a una pista de audio
+  libre, imágenes como capa); si no, una imagen (captura con Win+Shift+S → PNG en
+  `%APPDATA%\com.snip.app\pegados\` → capa de imagen); si no, texto → capa de texto. Se usa el
+  evento `paste` del WebView, con respaldo por teclado + Clipboard API. En un campo de texto,
+  Ctrl+V pega en el campo.
+- Ctrl+Alt+V pega solo efectos (color, look, nitidez, ruido, estabilización, velocidad, volumen)
+  del último clip copiado, sin tocar cortes ni encuadre.
+- Grupos (`project.groups`, también en el modelo de Rust): elegir uno elige el grupo; arrastrar
+  una capa o un audio corre a los demás; copiar/borrar va completo; Ctrl+Shift+G desagrupa.
+- Menú contextual (clic derecho) en clips, capas, audio y subtítulos con las mismas acciones.
+- El audio ya admite varias filas (`track`): pegar o arrastrar hacia abajo usa otra pista.
+- Se sacó Ctrl+G de los atajos del navegador que se bloquean (si no, nunca llegaba a la app).

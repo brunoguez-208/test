@@ -955,6 +955,7 @@ mod tests {
             fade_in: 1.0,
             fade_out: 2.0,
             ducking: true,
+            track: 0,
         });
         let c = run(&p);
         let last = c.inputs.last().unwrap().join(" ");

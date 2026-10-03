@@ -14,6 +14,7 @@ import {
 import { addMarker, adjacentMarker, deleteClips, deleteRange, splitAt } from "../project/ops";
 import { totalDuration } from "../project/timeline";
 import { zoomTimeline } from "../components/timeline/zoom";
+import { copy, cut, duplicateSelection, groupSelection, pasteEffectsToSelection, ungroupSelection } from "../store/clipboard";
 
 let shuttleRate = 0;
 
@@ -35,7 +36,7 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
   const tab = activeTab(st);
   const p = activeProject(st);
   if (st.phase !== "editor" || !tab || !p) return false;
-  if (repeat && ["togglePlay", "export", "shuttle", "split", "marker", "save", "closeTab", "delete"].includes(action.type)) return true;
+  if (repeat && ["togglePlay", "export", "shuttle", "split", "marker", "save", "closeTab", "delete", "copy", "cut", "duplicate", "pasteEffects", "group", "ungroup"].includes(action.type)) return true;
   // Recorte / zoom sobre el preview: Esc sale; deshacer descarta el recorte;
   // cualquier otra edición primero lo confirma.
   if (st.imageEdit) {
@@ -51,7 +52,21 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
   }
   const pl = player();
   const t = st.time;
+  // Con texto seleccionado en la página (detalles de un error), Ctrl+C copia el texto.
+  if (action.type === "copy" && (window.getSelection()?.toString() ?? "") !== "") return false;
   switch (action.type) {
+    case "copy":
+      return copy();
+    case "cut":
+      return cut();
+    case "duplicate":
+      return duplicateSelection();
+    case "pasteEffects":
+      return pasteEffectsToSelection();
+    case "group":
+      return groupSelection();
+    case "ungroup":
+      return ungroupSelection();
     case "togglePlay":
       shuttleRate = 0;
       pl.toggle();

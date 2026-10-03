@@ -1,3 +1,5 @@
+import { openContextMenu } from "../ui/ContextMenu";
+import { itemMenu } from "../../store/clipboard";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -261,7 +263,16 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
   const trimDown = (edge: "in" | "out") => makeTrimHandler(edge, project, geo, snapOn);
 
   return (
-    <div ref={trackRef} className="tl-track relative" style={{ height: VIDEO_H }} data-testid="video-track">
+    <div
+      ref={trackRef}
+      className="tl-track relative"
+      style={{ height: VIDEO_H }}
+      data-testid="video-track"
+      onContextMenu={(e) => {
+        const el = (e.target as HTMLElement).closest("[data-clip-id]") as HTMLElement | null;
+        if (el) openContextMenu(e, itemMenu(el.dataset.clipId!));
+      }}
+    >
       {project.clips.map((c, i) => {
         const m = project.media.find((x) => x.id === c.mediaId);
         const dragging = drag?.id === c.id;

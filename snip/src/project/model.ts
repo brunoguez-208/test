@@ -236,6 +236,8 @@ export interface MusicClip {
   fadeIn: number;
   fadeOut: number;
   ducking: boolean;
+  /** Pista de audio (fila) donde está; 0 = la primera. */
+  track?: number;
 }
 
 export interface Marker {
@@ -341,6 +343,8 @@ export interface Project {
   canvas: Canvas;
   view: ViewState;
   export: ExportSettings;
+  /** Grupos (Ctrl+G): ids que se seleccionan, mueven, copian y borran juntos. */
+  groups?: string[][];
 }
 
 // --------------------------------- Defaults ---------------------------------

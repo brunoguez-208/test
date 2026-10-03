@@ -473,6 +473,8 @@ kbd.kbd {
 .select-item { color: var(--text-primary); }
 .select-item.is-active { background: var(--subtle-fill-hover); }
 .select-item.is-disabled { color: var(--text-disabled); }
+.flyout [role="menuitem"]:hover { background: var(--subtle-fill-hover); }
+.flyout [role="menuitem"]:active { background: var(--subtle-fill-press); }
 
 
 .toggle {

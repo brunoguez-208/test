@@ -1,12 +1,15 @@
 // Pistas de superposiciones (textos, logos…) y de subtítulos: cada capa se
 // mueve en el tiempo y entre filas, y se recorta por los bordes.
 
+import { openContextMenu } from "../ui/ContextMenu";
+import { itemMenu } from "../../store/clipboard";
 import { motion, useReducedMotion } from "motion/react";
 import { Blur16Regular, Image16Regular, PictureInPicture16Regular, TextT16Regular } from "@fluentui/react-icons";
 import type { Cue, Overlay, Project } from "../../project/model";
 import { moveOverlay, trimOverlay, updateCue } from "../../project/overlayOps";
 import { snap, snapPoints } from "../../project/ops";
 import { basename } from "../../lib/files";
+import { groupOf, shiftGroup } from "../../project/clipboard";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor, type InspectorTab } from "../../store/editor";
 import { player } from "../../store/controller";
 import { OVERLAY_H, tToX, type Geo } from "./geometry";
@@ -90,6 +93,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
   const down = (mode: Mode) => (e: React.PointerEvent) => {
     const origin = project;
     const o0 = o;
+    const mates = (groupOf(origin, o0.id) ?? []).filter((id) => id !== o0.id);
     itemDrag(
       e,
       geo,
@@ -98,11 +102,13 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       snapOn,
       (dt) => (mode === "move" ? [o0.start + dt, o0.start + o0.duration + dt] : mode === "in" ? [o0.start + dt] : [o0.start + o0.duration + dt]),
       (dt, dl) =>
-        edit(() =>
-          mode === "move"
-            ? moveOverlay(origin, o0.id, o0.start + dt, Math.min(lanes, Math.max(0, o0.lane + dl)))
-            : trimOverlay(origin, o0.id, mode, mode === "in" ? o0.start + dt : o0.start + o0.duration + dt),
-        ),
+        edit(() => {
+          if (mode !== "move") return trimOverlay(origin, o0.id, mode, mode === "in" ? o0.start + dt : o0.start + o0.duration + dt);
+          const moved = moveOverlay(origin, o0.id, o0.start + dt, Math.min(lanes, Math.max(0, o0.lane + dl)));
+          // Los demás del grupo se corren lo mismo.
+          const real = (moved.overlays.find((x) => x.id === o0.id)?.start ?? o0.start) - o0.start;
+          return mates.length ? shiftGroup(moved, mates, real) : moved;
+        }),
       () => select(o0.id, o0.type === "text" ? "text" : "video"),
     );
   };
@@ -114,6 +120,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
       className={`tl-overlay tl-overlay-${o.type} absolute ${selected ? "is-selected" : ""}`}
       style={{ left: x, width: w, top: o.lane * OVERLAY_H + 2, height: OVERLAY_H - 4 }}
       onPointerDown={down("move")}
+      onContextMenu={(e) => openContextMenu(e, itemMenu(o.id))}
       role="button"
       aria-label={`${o.type === "text" ? "Texto" : o.type === "video" ? "Picture-in-picture" : o.type === "blur" ? "Zona" : "Imagen"}: ${overlayLabel(project, o)}`}
       data-testid="overlay-item"
@@ -173,6 +180,7 @@ function CueItem({ project, c, geo, selected, snapOn }: { project: Project; c: C
       className={`tl-overlay tl-cue absolute ${selected ? "is-selected" : ""}`}
       style={{ left: x, width: w, top: 2, height: OVERLAY_H - 4 }}
       onPointerDown={down("move")}
+      onContextMenu={(e) => openContextMenu(e, itemMenu(c.id))}
       role="button"
       aria-label={`Subtítulo: ${c.text}`}
       data-testid="cue-item"

@@ -71,6 +71,8 @@ export const api = {
   filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
   revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
   revealLog: () => invoke<string>("reveal_log"),
+  clipboardFiles: () => invoke<string[]>("clipboard_files"),
+  saveClipboardImage: (data: string, ext: string) => invoke<string>("save_clipboard_image", { data, ext }),
   openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
 };
 

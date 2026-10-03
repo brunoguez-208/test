@@ -1,9 +1,12 @@
+import { openContextMenu } from "../ui/ContextMenu";
+import { itemMenu } from "../../store/clipboard";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
 import type { Clip, MediaRef, MusicClip, Project } from "../../project/model";
 import { layout } from "../../project/timeline";
 import { snap, snapPoints, trimMusic, updateMusic } from "../../project/ops";
 import { basename } from "../../lib/files";
+import { groupOf, shiftGroup } from "../../project/clipboard";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor } from "../../store/editor";
 import { AUDIO_H, MUSIC_H, tToX, type Geo } from "./geometry";
 
@@ -103,13 +106,17 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
     if (e.button !== 0) return;
     e.stopPropagation();
     const x0 = e.clientX;
+    const y0 = e.clientY;
     const origin = project;
     const m0 = mu;
+    const rows = musicRows(origin);
+    const mates = (groupOf(origin, m0.id) ?? []).filter((id) => id !== m0.id);
     let started = false;
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - x0;
+      const dy = ev.clientY - y0;
       if (!started) {
-        if (Math.abs(dx) < 3) return;
+        if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
         started = true;
         gestureStart();
       }
@@ -122,7 +129,10 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
         const b = snap(endT, pts, thr);
         if (a.snapped) st = a.time;
         else if (b.snapped) st = b.time - (m0.outPoint - m0.inPoint);
-        edit(() => updateMusic(origin, m0.id, (m) => ({ ...m, start: st })));
+        // Arrastrar hacia arriba/abajo cambia de pista (una fila más abajo crea una nueva).
+        const track = Math.min(rows, Math.max(0, (m0.track ?? 0) + Math.round(dy / MUSIC_H)));
+        const moved = updateMusic(origin, m0.id, (m) => ({ ...m, start: st, track }));
+        edit(() => (mates.length ? shiftGroup(moved, mates, Math.max(0, st) - m0.start) : moved));
       } else {
         const edgeT = (mode === "in" ? m0.start : m0.start + (m0.outPoint - m0.inPoint)) + dx / geo.pps;
         edit(() => trimMusic(origin, m0.id, mode, snap(edgeT, pts, thr).time));
@@ -144,8 +154,11 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
   return (
     <motion.div
       className={`tl-music absolute top-[3px] ${selected ? "is-selected" : ""}`}
-      style={{ left: x, width: w, height: MUSIC_H - 6 }}
+      style={{ left: x, width: w, height: MUSIC_H - 6, top: (mu.track ?? 0) * MUSIC_H + 3 }}
       onPointerDown={startDrag("move")}
+      onContextMenu={(e) => openContextMenu(e, itemMenu(mu.id))}
+      data-music-id={mu.id}
+      data-track={mu.track ?? 0}
       data-testid="music-clip"
       role="button"
       aria-label={`Música: ${media ? basename(media.path) : ""}`}
@@ -161,11 +174,16 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
   );
 }
 
-/** Pista de música (cada clip de música con su forma de onda). */
+/** Filas de audio (pistas de música, efectos, voz…). */
+export function musicRows(p: Project): number {
+  return p.music.length ? Math.max(...p.music.map((m) => m.track ?? 0)) + 1 : 0;
+}
+
+/** Pistas de audio (cada clip con su forma de onda, una fila por pista). */
 export function MusicTrack({ project, geo, snapOn }: { project: Project; geo: Geo; snapOn: boolean }) {
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   return (
-    <div className="tl-track relative" style={{ height: MUSIC_H }} data-testid="music-track">
+    <div className="tl-track relative" style={{ height: Math.max(1, musicRows(project)) * MUSIC_H }} data-testid="music-track">
       {project.music.map((mu) => (
         <MusicView
           key={mu.id}

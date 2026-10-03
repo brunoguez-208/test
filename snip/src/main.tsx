@@ -19,13 +19,17 @@ async function boot() {
       const k = e.key.toLowerCase();
       const ctrl = e.ctrlKey || e.metaKey;
       // Atajos del navegador que no tienen sentido en la app (Ctrl+S, Ctrl+W, Ctrl+Tab los maneja Snip).
-      if (k === "f5" || k === "f7" || (ctrl && ["r", "p", "f", "g", "u", "j"].includes(k)) || (ctrl && e.shiftKey && ["i", "c"].includes(k))) {
+      if (k === "f5" || k === "f7" || (ctrl && ["r", "p", "f", "u", "j"].includes(k)) || (ctrl && e.shiftKey && ["i", "c"].includes(k))) {
         e.preventDefault();
       }
     }, true);
   }
 
   const { App } = await import("./App");
+  if (import.meta.env.MODE === "mock") {
+    const { installTestApi } = await import("./mocks/testApi");
+    installTestApi();
+  }
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />

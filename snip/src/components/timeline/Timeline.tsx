@@ -27,7 +27,7 @@ import { IconButton, Button } from "../ui/Button";
 import { Tooltip } from "../ui/Tooltip";
 import { AUDIO_H, GUTTER, MUSIC_H, OVERLAY_H, PAD_X, RULER_H, VIDEO_H, geometry, rulerLabel, rulerStep, tToX, useTrackWidth, xToT, type Geo } from "./geometry";
 import { VideoTrack } from "./VideoTrack";
-import { MainAudioTrack, MusicTrack } from "./AudioTracks";
+import { MainAudioTrack, MusicTrack, musicRows } from "./AudioTracks";
 import { OverlayTrack, SubtitleTrack, overlayLanes } from "./OverlayTracks";
 import { setScroll, zoomTimeline } from "./zoom";
 
@@ -198,7 +198,7 @@ export function Timeline({ project }: { project: Project }) {
   const hasMusic = project.music.length > 0;
   const lanes = overlayLanes(project);
   const hasCues = project.subtitles.cues.length > 0;
-  const tracksH = RULER_H + lanes * OVERLAY_H + (hasCues ? OVERLAY_H : 0) + VIDEO_H + AUDIO_H + (hasMusic ? MUSIC_H : 0) + 8;
+  const tracksH = RULER_H + lanes * OVERLAY_H + (hasCues ? OVERLAY_H : 0) + VIDEO_H + AUDIO_H + musicRows(project) * MUSIC_H + 8;
 
   // Mantener el playhead a la vista mientras se reproduce.
   useEffect(() => {
@@ -359,7 +359,7 @@ export function Timeline({ project }: { project: Project }) {
             <Speaker216Regular />
           </div>
           {hasMusic && (
-            <div className="flex items-center justify-center text-[var(--text-tertiary)]" style={{ height: MUSIC_H }} title="Música">
+            <div className="flex items-start justify-center pt-2.5 text-[var(--text-tertiary)]" style={{ height: musicRows(project) * MUSIC_H }} title="Audio">
               <MusicNote216Regular />
             </div>
           )}

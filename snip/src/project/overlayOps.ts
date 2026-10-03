@@ -49,6 +49,17 @@ export function addImage(p: Project, media: MediaRef): [Project, string] {
   return addOverlay(q, layer, 0, totalDuration(q));
 }
 
+/** Imagen como capa normal: centrada, en el playhead, por unos segundos. */
+export function addImageAt(p: Project, media: MediaRef, at: number, duration = 5): [Project, string] {
+  const [q, ref] = addMedia(p, media);
+  const aspect = media.width > 0 && media.height > 0 ? media.height / media.width : 1;
+  const canvasAspect = q.canvas.height / q.canvas.width;
+  // Que entre entera: 40 % del ancho, o menos si es muy alta.
+  const width = Math.min(0.4, (0.6 * canvasAspect) / aspect);
+  const layer: ImageLayer = { type: "image", mediaId: ref.id, x: 0.5, y: 0.5, width, opacity: 1, radius: 0, shadow: false };
+  return addOverlay(q, layer, at, duration);
+}
+
 export function updateOverlay(p: Project, id: string, f: (o: Overlay) => Overlay): Project {
   let changed = false;
   const overlays = p.overlays.map((o) => {

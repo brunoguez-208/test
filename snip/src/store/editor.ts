@@ -256,7 +256,13 @@ export function redoEdit() {
 
 export function setSelection(ids: string[]) {
   const tab = activeTab();
-  if (tab) updateTab(tab.id, (t) => ({ ...t, selection: ids }));
+  if (!tab) return;
+  // Elegir un elemento agrupado elige todo el grupo.
+  const groups = tab.history.present.groups ?? [];
+  const all = new Set(ids);
+  for (const g of groups) if (g.some((id) => all.has(id))) for (const id of g) all.add(id);
+  const next = all.size === ids.length ? ids : [...all];
+  updateTab(tab.id, (t) => ({ ...t, selection: next }));
 }
 
 export function setMarks(markIn: number | null, markOut: number | null) {

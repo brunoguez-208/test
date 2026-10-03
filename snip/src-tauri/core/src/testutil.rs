@@ -63,6 +63,7 @@ pub fn project_with(media: Vec<MediaRef>, clips: Vec<Clip>) -> Project {
         canvas: Canvas { width: w, height: h, fps_num: fps, fps_den: 1, auto: true },
         view: ViewState::default(),
         export: ExportSettings::default(),
+        groups: vec![],
     }
 }
 
@@ -92,6 +93,7 @@ pub fn sample_project() -> Project {
         fade_in: 1.0,
         fade_out: 2.0,
         ducking: true,
+            track: 0,
     });
     p.markers.push(Marker { id: "k1".into(), time: 2.0, name: "Gol".into() });
     p.ranges.push(TimeRange { id: "r1".into(), start: 0.5, end: 2.5, name: String::new() });

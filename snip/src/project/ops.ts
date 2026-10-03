@@ -199,6 +199,7 @@ export function deleteClips(p: Project, ids: string[]): Project {
     subtitles: p.subtitles.cues.some((c) => set.has(c.id)) ? { ...p.subtitles, cues: p.subtitles.cues.filter((c) => !set.has(c.id)) } : p.subtitles,
     markers: p.markers.filter((m) => !set.has(m.id)),
     ranges: p.ranges.filter((r) => !set.has(r.id)),
+    ...(p.groups?.length ? { groups: p.groups.map((g) => g.filter((id) => !set.has(id))).filter((g) => g.length > 1) } : {}),
   };
 }
 

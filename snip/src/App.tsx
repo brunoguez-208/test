@@ -5,6 +5,7 @@ import { api } from "./lib/platform";
 import { useAppShell } from "./hooks/useAppShell";
 import { useDragDrop } from "./hooks/useDragDrop";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { ContextMenuHost } from "./components/ui/ContextMenu";
 import { WindowControls } from "./components/WindowControls";
 import { Titlebar } from "./components/Titlebar";
 import { Welcome } from "./components/Welcome";
@@ -13,12 +14,14 @@ import { DropOverlay } from "./components/DropOverlay";
 import { Toasts } from "./components/Toasts";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { QueuePanel } from "./components/QueuePanel";
+import { installPasteHandler } from "./store/clipboard";
 import { ShortcutsPanel } from "./components/ShortcutsPanel";
 
 export function App() {
   useAppShell();
   useDragDrop();
   useShortcuts();
+  useEffect(() => installPasteHandler(), []);
   const phase = useEditor((s) => s.phase);
   const active = useEditor((s) => s.active);
   const [shown, setShown] = useState(false);
@@ -51,6 +54,7 @@ export function App() {
     <MotionConfig reducedMotion="user">
       <Titlebar />
       <WindowControls />
+      <ContextMenuHost />
       <motion.div
         className="workspace h-full"
         initial={{ opacity: 0, scale: 0.985 }}

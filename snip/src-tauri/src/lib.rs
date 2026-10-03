@@ -151,6 +151,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::take_launch_file,
             commands::reveal_log,
+            commands::clipboard_files,
+            commands::save_clipboard_image,
             commands::show_main_window,
             commands::get_appearance,
             commands::open_media,

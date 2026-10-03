@@ -102,6 +102,9 @@ export interface MockState {
   nextExportError: AppError | null;
   dialogOpenPaths: string[] | null;
   maximized: boolean;
+  /** Archivos "copiados en el Explorador" (CF_HDROP). */
+  clipboardFiles: string[];
+  pastedImages: number[];
   dialogSavePath: string | null;
   autosaves: Record<string, { project: Project; file: string | null }>;
   snips: Record<string, Project>;
@@ -176,6 +179,8 @@ export function installTauriMock() {
     nextExportError: null,
     dialogOpenPaths: ["C:\\Users\\Bruno\\Videos\\Clip de prueba.mp4"],
     maximized: false,
+    clipboardFiles: [],
+    pastedImages: [],
     dialogSavePath: null,
     autosaves: {},
     snips: {},
@@ -503,6 +508,11 @@ export function installTauriMock() {
           state.maximized = !state.maximized;
           setTimeout(() => void emit("tauri://resize", { width: 1280, height: 820 }), 0);
           return null;
+        case "clipboard_files":
+          return state.clipboardFiles;
+        case "save_clipboard_image":
+          state.pastedImages.push(String(a.data).length);
+          return `C:\\Users\\Bruno\\AppData\\Roaming\\com.snip.app\\pegados\\imagen-pegada-${state.pastedImages.length}.${a.ext}`;
         case "reveal_log":
           return "C:\\Users\\demo\\AppData\\Roaming\\com.snip.app\\logs\\snip.log";
         case "plugin:dialog|open": {
