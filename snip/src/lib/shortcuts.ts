@@ -32,6 +32,7 @@ export type ShortcutAction =
   | { type: "pasteEffects" }
   | { type: "group" }
   | { type: "ungroup" }
+  | { type: "saveAs" }
   | { type: "trimStart" }
   | { type: "trimEnd" };
 
@@ -77,7 +78,7 @@ export function shortcutFor(e: KeyLike, target?: TargetLike | null): ShortcutAct
     if (key === "Tab") return e.shiftKey ? { type: "prevTab" } : { type: "nextTab" };
     if (key === "e") return { type: "export" };
     if (key === "o") return { type: "open" };
-    if (key === "s") return { type: "save" };
+    if (key === "s") return e.shiftKey ? { type: "saveAs" } : { type: "save" };
     if (key === "w") return { type: "closeTab" };
     if (key === "z") return e.shiftKey ? { type: "redo" } : { type: "undo" };
     if (key === "y") return { type: "redo" };
@@ -170,6 +171,7 @@ export const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ["Ctrl + O", "Abrir video o proyecto"],
       ["Ctrl + S", "Guardar el proyecto (.snip)"],
+      ["Ctrl + Shift + S", "Guardar el proyecto como…"],
       ["Ctrl + E", "Exportar"],
       ["Ctrl + Tab", "Pestaña siguiente"],
       ["Ctrl + W", "Cerrar pestaña"],

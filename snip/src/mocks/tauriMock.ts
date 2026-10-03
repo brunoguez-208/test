@@ -106,6 +106,11 @@ export interface MockState {
   /** Archivos "copiados en el Explorador" (CF_HDROP). */
   clipboardFiles: string[];
   pastedImages: number[];
+  packages: { dest: string; zip: boolean; media: number }[];
+  versions: { info: { id: string; projectId: string; name: string | null; createdAt: number; auto: boolean; duration: number; clipCount: number; thumbnail: string | null }; project: Project }[];
+  templates: { info: { id: string; name: string; createdAt: number; thumbnail: string | null; summary: string }; data: unknown }[];
+  /** Carpeta que devuelve el diálogo de carpeta. */
+  dialogFolder: string | null;
   dialogSavePath: string | null;
   autosaves: Record<string, { project: Project; file: string | null }>;
   snips: Record<string, Project>;
@@ -183,6 +188,10 @@ export function installTauriMock() {
     maximized: false,
     clipboardFiles: [],
     pastedImages: [],
+    packages: [],
+    versions: [],
+    templates: [],
+    dialogFolder: "C:\\Users\\Bruno\\Documents",
     dialogSavePath: null,
     autosaves: {},
     snips: {},
@@ -441,6 +450,34 @@ export function installTauriMock() {
           if (/dañado/i.test(path)) throw { kind: "badProject", message: "El proyecto está dañado o no es un proyecto de Snip." } satisfies AppError;
           return { project: p, missing: p.media.filter((m) => /movido/i.test(m.path)).map((m) => m.id) };
         }
+        case "package_project": {
+          for (let x = 0; x <= 100; x += 25) await emit("package-progress", { percent: x });
+          const name = (a.project as Project).name || "proyecto";
+          state.packages.push({ dest: String(a.dest), zip: !!a.zip, media: (a.project as Project).media.length });
+          return { path: a.zip ? String(a.dest) : `${a.dest}\\${name}`, files: (a.project as Project).media.length + 1, bytes: 48_000_000 };
+        }
+        case "save_version": {
+          const p = a.project as Project;
+          const v = { id: `v${Date.now()}${state.versions.length}`, projectId: p.id, name: (a.name as string) || null, createdAt: Date.now() + state.versions.length, auto: !!a.auto, duration: totalDuration(p), clipCount: p.clips.length, thumbnail: null };
+          state.versions.unshift({ info: v, project: JSON.parse(JSON.stringify(p)) });
+          return v;
+        }
+        case "list_versions":
+          return state.versions.filter((v) => v.info.projectId === a.projectId).map((v) => v.info);
+        case "load_version":
+          return state.versions.find((v) => v.info.id === a.versionId)!.project;
+        case "save_template": {
+          const t = { id: `t${Date.now()}`, name: String(a.name), createdAt: Date.now(), thumbnail: null, summary: String(a.summary) };
+          state.templates.unshift({ info: t, data: a.data });
+          return t;
+        }
+        case "list_templates":
+          return state.templates.map((t) => t.info);
+        case "load_template":
+          return state.templates.find((t) => t.info.id === a.id)!.data;
+        case "delete_template":
+          state.templates = state.templates.filter((t) => t.info.id !== a.id);
+          return null;
         case "save_snip": {
           const path = String(a.path).endsWith(".snip") ? String(a.path) : `${a.path}.snip`;
           state.snips[path] = a.project as Project;
@@ -518,7 +555,8 @@ export function installTauriMock() {
         case "reveal_log":
           return "C:\\Users\\demo\\AppData\\Roaming\\com.snip.app\\logs\\snip.log";
         case "plugin:dialog|open": {
-          const opts = (a.options ?? {}) as { multiple?: boolean };
+          const opts = (a.options ?? {}) as { multiple?: boolean; directory?: boolean };
+          if (opts.directory) return state.dialogFolder;
           const paths = state.dialogOpenPaths;
           if (!paths || !paths.length) return null;
           return opts.multiple ? paths : paths[0];

@@ -146,7 +146,7 @@ export async function ensureWaveform(m: MediaRef) {
   }
 }
 
-function afterProjectLoaded(p: Project) {
+export function afterProjectLoaded(p: Project) {
   for (const m of p.media) void ensureWaveform(m);
   syncPlayer();
   scheduleHeavy();
@@ -373,6 +373,23 @@ export async function saveProject(saveAs = false): Promise<boolean> {
   }
 }
 
+/** "Exportar" como Proyecto Snip: guarda el .snip al instante (sin diálogo si ya hay ruta). */
+export async function saveSnipNow(path: string | null) {
+  const tab = activeTab();
+  const p = activeProject();
+  if (!tab || !p) return;
+  if (!path) return void saveProject(true);
+  try {
+    const saved = await api.saveSnip(path, p);
+    markSaved(tab.id, saved);
+    void api.autosaveProject(p, saved).catch(() => {});
+    void api.addRecentFile(saved, "project").catch(() => {});
+    pushToast({ severity: "success", title: "Proyecto guardado", message: basename(saved), action: { label: "Mostrar", run: () => void api.revealInFolder(saved).catch(() => {}) } });
+  } catch (e) {
+    notifyError("No se pudo guardar el proyecto", e);
+  }
+}
+
 /** Cierra una pestaña; si hay cambios sin guardar, pregunta. */
 export async function closeTab(id: string) {
   const s = useEditor.getState();
@@ -449,6 +466,14 @@ function scheduleAutosave(id: string) {
 }
 
 const thumbSaved = new Map<string, string>();
+/** Miniatura (JPEG en data URL) del primer clip, si ya está en la caché del timeline. */
+export function projectThumb(p: Project): string | null {
+  const c = p.clips[0];
+  const m = c && p.media.find((x) => x.id === c.mediaId);
+  if (!m) return null;
+  return useEditor.getState().thumbs[thumbKey(m.path, quantizeThumbTime(c.inPoint + 0.05, 0.1), 96)] ?? null;
+}
+
 function maybeSaveThumbnail(p: Project) {
   const c = p.clips[0];
   const m = c && p.media.find((x) => x.id === c.mediaId);
@@ -1022,6 +1047,8 @@ export async function enqueueExport(opts: { window?: { start: number; end: numbe
   try {
     raster = await prepareRaster(p);
     await api.enqueueExport({ ...buildJob(p, opts), raster }, title);
+    // Cada exportación deja una versión automática del proyecto.
+    void api.saveVersion(p, opts.label ? `Exportación · ${opts.label}` : `Exportación ${p.export.format.toUpperCase()}`, true, projectThumb(p)).catch(() => {});
     pushToast({
       severity: "info",
       title: "Exportando en segundo plano",

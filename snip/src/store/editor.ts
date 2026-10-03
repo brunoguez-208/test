@@ -3,6 +3,7 @@
 // (cola, miniaturas, formas de onda, intermedios). Los efectos (hablar con
 // Rust) viven en ./controller.ts.
 
+import type { TemplateInfo, VersionInfo } from "../lib/platform";
 import { syncWatermarks } from "../project/overlayOps";
 import { create } from "zustand";
 import { useEffect, useState } from "react";
@@ -101,6 +102,14 @@ export interface EditorState {
   drag: DragHint;
   /** Pista y tiempo bajo el puntero al arrastrar archivos sobre el timeline. */
   dropTarget: DropTarget | null;
+  /** Diálogo de proyecto abierto (versiones, plantillas). */
+  projectDialog: "version" | "versions" | "template" | "templates" | null;
+  versions: VersionInfo[];
+  templates: TemplateInfo[];
+  /** Progreso de "Empaquetar proyecto" (null = no hay). */
+  packaging: number | null;
+  /** Exportar como proyecto .snip (formato de la pestaña Exportar). */
+  exportAsSnip: boolean;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -133,6 +142,11 @@ export const initialState: EditorState = {
   autoSubs: null,
   drag: "none",
   dropTarget: null,
+  projectDialog: null,
+  versions: [],
+  templates: [],
+  packaging: null,
+  exportAsSnip: false,
   toasts: [],
   focused: true,
   confirm: null,

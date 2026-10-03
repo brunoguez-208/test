@@ -15,6 +15,7 @@ pub mod heavy;
 pub mod log;
 pub mod migrate;
 pub mod naming;
+pub mod package;
 pub mod probe;
 pub mod progress;
 pub mod queue;

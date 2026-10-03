@@ -8,6 +8,7 @@ import { formatDuration } from "../lib/timecode";
 import type { ProjectSummary } from "../lib/types";
 import { TrimIllustration } from "./TrimIllustration";
 import { Button } from "./ui/Button";
+import { DocumentCopy20Regular } from "@fluentui/react-icons";
 import { ProgressRing } from "./ui/Progress";
 import { Tooltip } from "./ui/Tooltip";
 
@@ -136,6 +137,9 @@ export function Welcome() {
         >
           {opening ? "Abriendo…" : "Abrir video"}
           <kbd className="kbd ml-1">Ctrl+O</kbd>
+        </Button>
+        <Button size="lg" icon={<DocumentCopy20Regular />} onClick={() => useEditor.setState({ projectDialog: "templates" })} data-testid="welcome-template">
+          Nuevo desde plantilla
         </Button>
       </motion.div>
 

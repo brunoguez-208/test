@@ -7,13 +7,33 @@ import {
   PanelRightContract20Regular,
   PanelRightExpand20Regular,
   QuestionCircle20Regular,
+  DocumentBulletList20Regular,
 } from "@fluentui/react-icons";
+import { openContextMenu, type MenuEntry } from "./ui/ContextMenu";
+import { packageProject } from "../store/projectFiles";
+import { saveProject } from "../store/controller";
 import { isDirty, useEditor } from "../store/editor";
 import { activateTab, closeTab, openWithDialog } from "../store/controller";
 import { AppGlyph } from "./AppGlyph";
 import { IconButton } from "./ui/Button";
 import { Tooltip } from "./ui/Tooltip";
 import { ProgressRing } from "./ui/Progress";
+
+function projectMenu(): MenuEntry[] {
+  const dlg = (d: "version" | "versions" | "template") => () => useEditor.setState({ projectDialog: d });
+  return [
+    { label: "Guardar", hint: "Ctrl+S", run: () => void saveProject(), testId: "menu-save" },
+    { label: "Guardar proyecto como…", hint: "Ctrl+Shift+S", run: () => void saveProject(true), testId: "menu-save-as" },
+    "separator",
+    { label: "Guardar versión…", run: dlg("version"), testId: "menu-save-version" },
+    { label: "Versiones…", run: dlg("versions"), testId: "menu-versions" },
+    "separator",
+    { label: "Empaquetar en una carpeta…", run: () => void packageProject(false), testId: "menu-package-folder" },
+    { label: "Empaquetar en un ZIP…", run: () => void packageProject(true), testId: "menu-package-zip" },
+    "separator",
+    { label: "Guardar como plantilla…", run: dlg("template"), testId: "menu-save-template" },
+  ];
+}
 
 function QueueButton() {
   const queue = useEditor((s) => s.queue);
@@ -131,6 +151,24 @@ export function Titlebar() {
       <div className="flex-1" />
       <div className="mb-[4px] flex items-center gap-1">
         <QueueButton />
+        <AnimatePresence>
+          {phase === "editor" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Tooltip content="Proyecto: guardar, versiones, empaquetar, plantillas" placement="bottom">
+                <IconButton
+                  label="Menú del proyecto"
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    openContextMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => {} }, projectMenu());
+                  }}
+                  data-testid="project-menu"
+                >
+                  <DocumentBulletList20Regular />
+                </IconButton>
+              </Tooltip>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <Tooltip content={<>Atajos de teclado <kbd className="kbd ml-1">?</kbd></>} placement="bottom">
           <IconButton label="Atajos de teclado" onClick={() => useEditor.setState((s) => ({ shortcutsOpen: !s.shortcutsOpen }))} data-testid="help-button">
             <QuestionCircle20Regular />

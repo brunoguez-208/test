@@ -1,3 +1,4 @@
+import { Save16Regular, Save20Regular } from "@fluentui/react-icons";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -19,7 +20,7 @@ import { formatDuration, formatFps, secondsToTimecode } from "../../lib/timecode
 import type { FpsChoice, ResolutionChoice, ResolutionKind } from "../../lib/types";
 import { api, pickSavePath } from "../../lib/platform";
 import { activeTab, ask, edit, patchProject, useEditor } from "../../store/editor";
-import { addRangeFromMarks, buildJob, enqueueExport, exportRanges } from "../../store/controller";
+import { addRangeFromMarks, buildJob, enqueueExport, exportRanges, saveSnipNow } from "../../store/controller";
 import { Button } from "../ui/Button";
 import { Segmented } from "../ui/Segmented";
 import { Select, type SelectOption } from "../ui/Select";
@@ -60,6 +61,7 @@ export function ExportTab({ project }: { project: Project }) {
   const outFps = FPS_VALUE[st.fps] ?? canvasFps(project.canvas);
   const isGif = st.format === "gif";
   const isMp3 = st.format === "mp3";
+  const asSnip = useEditor((s) => s.exportAsSnip);
 
   // Nombre que va a tener el archivo (Rust decide; nunca sobrescribe).
   useEffect(() => {
@@ -140,23 +142,32 @@ export function ExportTab({ project }: { project: Project }) {
   };
 
   const shownOut = output ?? defaultOut;
+  // Proyecto .snip: junto al video que se exportaría (mismo nombre) o el .snip de la pestaña.
+  const snipOut = tab?.file ?? (shownOut ? shownOut.replace(/\.[^.\\/]+$/, ".snip") : null);
   const summaryCodec = isMp3 ? "MP3 · 320 kbps" : isGif ? `GIF · ${st.gif.fps} fps` : st.format === "webm" ? "VP9" : fast ? `${(project.media[0]?.videoCodec ?? "").toUpperCase()} sin recodificar` : `H.264 · ${encoder?.label ?? "detectando…"}`;
 
   return (
     <div className="flex h-full flex-col" data-testid="export-tab">
       <div className="flex flex-1 flex-col gap-6 pb-4">
         <Section title="Formato">
-          <Segmented<OutputFormat>
+          <Segmented<OutputFormat | "snip">
             label="Formato"
-            value={st.format}
+            value={asSnip ? "snip" : st.format}
             onChange={(f) => {
               setOutput(null);
+              if (f === "snip") return useEditor.setState({ exportAsSnip: true });
+              useEditor.setState({ exportAsSnip: false });
               setExport((s) => ({ ...s, format: f, sizeTarget: f === "gif" ? null : s.sizeTarget }));
             }}
-            options={FORMATS.map((f) => ({ value: f.id, label: f.label, title: f.hint }))}
+            options={[...FORMATS.map((f) => ({ value: f.id as OutputFormat | "snip", label: f.label, title: f.hint })), { value: "snip", label: "Proyecto", title: "Proyecto Snip (.snip): solo guarda el proyecto, al instante" }]}
             testId="format"
           />
           <AnimatePresence mode="wait" initial={false}>
+            {asSnip ? (
+              <motion.p key="snip" initial={{ opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="t-caption flex items-center gap-1.5 text-[var(--text-secondary)]" data-testid="mode-caption">
+                <Save16Regular /> Proyecto Snip (.snip): guarda solo el proyecto, al instante, para seguir editando después.
+              </motion.p>
+            ) : (
             <motion.div key={fast ? "fast" : st.format} initial={{ opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
               {fast ? (
                 <p className="t-caption flex items-center gap-1.5 text-[var(--text-secondary)]" data-testid="mode-caption">
@@ -168,14 +179,17 @@ export function ExportTab({ project }: { project: Project }) {
                 </p>
               )}
             </motion.div>
+            )}
           </AnimatePresence>
-          {["mp4", "mov", "mkv"].includes(st.format) && (
+          {!asSnip && ["mp4", "mov", "mkv"].includes(st.format) && (
             <Field inline label="Corte exacto al cuadro" hint="Siempre recodifica, aunque se pueda copiar.">
               <Toggle checked={st.mode === "precise"} onChange={(v) => setExport((s) => ({ ...s, mode: v ? "precise" : "auto" }))} label="Corte exacto al cuadro" testId="frame-exact" />
             </Field>
           )}
         </Section>
 
+        {!asSnip && (
+          <>
         {!isMp3 && (
           <Section title="Imagen">
             {isGif ? (
@@ -375,9 +389,17 @@ export function ExportTab({ project }: { project: Project }) {
             )}
           </div>
         </Section>
+          </>
+        )}
       </div>
 
       <div className="panel-footer sticky bottom-0 -mx-6 mt-auto flex flex-col gap-3 px-6 pb-6 pt-4">
+        {asSnip ? (
+          <div className="px-0.5" data-testid="export-summary">
+            <div className="t-caption text-[var(--text-secondary)]">Vas a obtener</div>
+            <p className="t-body-strong mt-0.5 truncate" title={snipOut ?? ""}>{snipOut ? basename(snipOut) : "Proyecto .snip"}</p>
+          </div>
+        ) : (
         <div className="px-0.5" data-testid="export-summary">
           <div className="t-caption flex items-center justify-between gap-2 text-[var(--text-secondary)]">
             <span>Vas a obtener</span>
@@ -389,8 +411,17 @@ export function ExportTab({ project }: { project: Project }) {
             {st.sizeTarget && !isGif ? ` · hasta ${st.sizeTarget.megabytes} MB` : ""}
           </p>
         </div>
-        <Button variant="accent" size="lg" className="w-full" icon={<ArrowExport20Regular />} onClick={() => void enqueueExport({ output })} disabled={!project.clips.length} data-testid="export-btn">
-          Exportar
+        )}
+        <Button
+          variant="accent"
+          size="lg"
+          className="w-full"
+          icon={asSnip ? <Save20Regular /> : <ArrowExport20Regular />}
+          onClick={() => void (asSnip ? saveSnipNow(snipOut) : enqueueExport({ output }))}
+          disabled={!project.clips.length}
+          data-testid="export-btn"
+        >
+          {asSnip ? "Guardar proyecto" : "Exportar"}
           <kbd className="kbd ml-1">Ctrl+E</kbd>
         </Button>
       </div>

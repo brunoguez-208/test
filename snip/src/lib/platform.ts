@@ -72,6 +72,14 @@ export const api = {
   revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
   revealLog: () => invoke<string>("reveal_log"),
   clipboardFiles: () => invoke<string[]>("clipboard_files"),
+  packageProject: (project: Project, dest: string, zip: boolean) => invoke<PackageResult>("package_project", { project, dest, zip }),
+  saveVersion: (project: Project, name: string | null, auto: boolean, thumb: string | null) => invoke<VersionInfo>("save_version", { project, name, auto, thumb }),
+  listVersions: (projectId: string) => invoke<VersionInfo[]>("list_versions", { projectId }),
+  loadVersion: (projectId: string, versionId: string) => invoke<Project>("load_version", { projectId, versionId }),
+  saveTemplate: (name: string, summary: string, data: unknown, thumb: string | null) => invoke<TemplateInfo>("save_template", { name, summary, data, thumb }),
+  listTemplates: () => invoke<TemplateInfo[]>("list_templates"),
+  loadTemplate: (id: string) => invoke<unknown>("load_template", { id }),
+  deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
   saveClipboardImage: (data: string, ext: string) => invoke<string>("save_clipboard_image", { data, ext }),
   openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
 };
@@ -85,6 +93,7 @@ export interface ThumbEvent {
 
 export const events = {
   onThumbnail: (cb: (e: ThumbEvent) => void) => listen<ThumbEvent>("thumbnail", (e) => cb(e.payload)),
+  onPackageProgress: (cb: (p: { percent: number }) => void) => listen<{ percent: number }>("package-progress", (e) => cb(e.payload)),
   onProxyProgress: (cb: (p: { path: string; percent: number }) => void) =>
     listen<{ path: string; percent: number }>("proxy-progress", (e) => cb(e.payload)),
   onHeavyProgress: (cb: (p: { key: string; percent: number }) => void) =>
@@ -164,6 +173,11 @@ export async function pickFiles(title: string, filters: { name: string; extensio
   return Array.isArray(r) ? r : [r];
 }
 
+export async function pickFolder(title: string): Promise<string | null> {
+  const r = await openDialog({ title, multiple: false, directory: true });
+  return typeof r === "string" ? r : null;
+}
+
 export async function pickSavePath(title: string, defaultPath: string, filters: { name: string; extensions: string[] }[]): Promise<string | null> {
   const r = await saveDialog({ title, defaultPath, filters });
   return r ?? null;
@@ -172,4 +186,29 @@ export async function pickSavePath(title: string, defaultPath: string, filters: 
 /** ¿Estamos dentro de Tauri (o con los mocks instalados)? */
 export function hasTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export interface PackageResult {
+  path: string;
+  files: number;
+  bytes: number;
+}
+
+export interface VersionInfo {
+  id: string;
+  projectId: string;
+  name: string | null;
+  createdAt: number;
+  auto: boolean;
+  duration: number;
+  clipCount: number;
+  thumbnail: string | null;
+}
+
+export interface TemplateInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  thumbnail: string | null;
+  summary: string;
 }

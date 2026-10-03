@@ -77,3 +77,9 @@ export function timeAgo(ms: number, now = Date.now()): string {
   const mo = Math.round(d / 30);
   return mo <= 1 ? "hace 1 mes" : `hace ${mo} meses`;
 }
+
+/** Nombre de archivo válido en Windows (sin \ / : * ? " < > |). */
+export function safeFileName(name: string): string {
+  const s = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim().replace(/\.+$/, "");
+  return s || "proyecto";
+}

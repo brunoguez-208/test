@@ -165,8 +165,13 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
     case "save":
       void saveProject();
       break;
+    case "saveAs":
+      void saveProject(true);
+      break;
     case "export":
-      void enqueueExport();
+      // Con el formato "Proyecto" elegido, Ctrl+E guarda el .snip.
+      if (st.exportAsSnip) void saveProject();
+      else void enqueueExport();
       break;
     case "zoomIn":
       zoomTimeline(1.5);

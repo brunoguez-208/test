@@ -176,7 +176,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
 - [x] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
 - [x] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
-- [ ] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
+- [x] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
 - [ ] Cierre: tests completos + instalador de la tanda A
 
 ### Notas de A1 (grabaciones de NVIDIA)
@@ -304,3 +304,19 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Q / W: recortan el inicio / final del clip bajo el playhead hasta el playhead (con ripple en
   la pista principal; si hay audio, capas o subtítulos elegidos bajo el playhead, recortan esos).
 - Panel `?`: secciones nuevas "Portapapeles" y "Pistas y audio", y Q / W en Edición.
+
+### Notas de A7 (proyecto, versiones y plantillas)
+- Exportar → formato "Proyecto": guarda solo el `.snip` al instante (junto al video que se
+  exportaría, o el `.snip` de la pestaña), sin pasar por la cola. Ctrl+E respeta la elección.
+- Menú "Proyecto" en la barra de título: Guardar (Ctrl+S), Guardar proyecto como… (Ctrl+Shift+S),
+  Guardar versión…, Versiones…, Empaquetar en una carpeta… / en un ZIP…, Guardar como plantilla…
+- Empaquetar (`snip-core/src/package.rs`): `.snip` + copia de cada medio en `media/` con rutas
+  relativas (nombres repetidos → "(2)"), en una carpeta nueva (nunca pisa una existente) o en un
+  ZIP (medios sin recomprimir, ZIP64 para archivos de más de 4 GB). Al abrir un `.snip`, las
+  rutas relativas se resuelven desde su carpeta: se abre en otra PC tal cual.
+- Versiones (carpeta de datos `versions/<proyecto>/`): manual con nombre opcional y una
+  automática por cada exportación (se guardan las últimas 20 automáticas; las manuales, todas);
+  lista con miniatura y fecha. Restaurar es una edición más (Ctrl+Z) y no toca las demás.
+- Plantillas (`templates/<id>/`): intro (primer clip), outro (último), textos/logos y estilo de
+  subtítulos, preset de exportación; los medios se copian a la plantilla. En la bienvenida,
+  "Nuevo desde plantilla": se eligen los videos y queda intro + videos + outro con todo aplicado.

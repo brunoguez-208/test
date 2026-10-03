@@ -5,6 +5,7 @@ import { api } from "./lib/platform";
 import { useAppShell } from "./hooks/useAppShell";
 import { useDragDrop } from "./hooks/useDragDrop";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { ProjectDialogs } from "./components/ProjectDialogs";
 import { ContextMenuHost } from "./components/ui/ContextMenu";
 import { WindowControls } from "./components/WindowControls";
 import { Titlebar } from "./components/Titlebar";
@@ -55,6 +56,7 @@ export function App() {
       <Titlebar />
       <WindowControls />
       <ContextMenuHost />
+      <ProjectDialogs />
       <motion.div
         className="workspace h-full"
         initial={{ opacity: 0, scale: 0.985 }}

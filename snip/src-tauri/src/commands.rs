@@ -374,6 +374,110 @@ pub fn remove_export_item(state: State<'_, AppState>, id: Option<u64>) {
 
 // ------------------------------ Proyectos -------------------------------------
 
+fn decode_jpeg(b64: Option<String>) -> CmdResult<Option<Vec<u8>>> {
+    b64.map(|s| {
+        base64::engine::general_purpose::STANDARD
+            .decode(s.trim_start_matches("data:image/jpeg;base64,"))
+            .map_err(|e| AppError::with_detail(ErrorKind::Unknown, e.to_string()))
+    })
+    .transpose()
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PackageProgress {
+    percent: f64,
+}
+
+/// "Empaquetar proyecto": carpeta (dest = carpeta padre) o ZIP (dest = .zip).
+#[tauri::command]
+pub async fn package_project(app: AppHandle, project: Project, dest: String, zip: bool) -> CmdResult<snip_core::package::PackageResult> {
+    let app2 = app.clone();
+    let r = blocking(move || {
+        let mut last = -1.0;
+        snip_core::package::package_project(&project, Path::new(&dest), zip, |p| {
+            if p - last >= 1.0 || p >= 100.0 {
+                last = p;
+                let _ = app2.emit("package-progress", PackageProgress { percent: p });
+            }
+        })
+    })
+    .await?;
+    snip_core::log::info(&format!("proyecto empaquetado en {}", r.path));
+    Ok(r)
+}
+
+#[tauri::command]
+pub async fn save_version(app: AppHandle, project: Project, name: Option<String>, auto: bool, thumb: Option<String>) -> CmdResult<snip_core::store::VersionInfo> {
+    blocking(move || {
+        let st = app.state::<AppState>();
+        let v = st.store.save_version(&project, name.as_deref(), auto, decode_jpeg(thumb)?.as_deref(), now_ms())?;
+        if let Some(t) = &v.thumbnail {
+            allow_asset(&app, Path::new(t));
+        }
+        Ok(v)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_versions(app: AppHandle, project_id: String) -> CmdResult<Vec<snip_core::store::VersionInfo>> {
+    blocking(move || {
+        let list = app.state::<AppState>().store.list_versions(&project_id);
+        for v in &list {
+            if let Some(t) = &v.thumbnail {
+                allow_asset(&app, Path::new(t));
+            }
+        }
+        Ok(list)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn load_version(app: AppHandle, project_id: String, version_id: String) -> CmdResult<Project> {
+    blocking(move || app.state::<AppState>().store.load_version(&project_id, &version_id)).await
+}
+
+#[tauri::command]
+pub async fn save_template(app: AppHandle, name: String, summary: String, data: serde_json::Value, thumb: Option<String>) -> CmdResult<snip_core::store::TemplateInfo> {
+    blocking(move || app.state::<AppState>().store.save_template(&name, &summary, data, decode_jpeg(thumb)?.as_deref(), now_ms())).await
+}
+
+#[tauri::command]
+pub async fn list_templates(app: AppHandle) -> CmdResult<Vec<snip_core::store::TemplateInfo>> {
+    blocking(move || {
+        let list = app.state::<AppState>().store.list_templates();
+        for t in &list {
+            if let Some(th) = &t.thumbnail {
+                allow_asset(&app, Path::new(th));
+            }
+        }
+        Ok(list)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn load_template(app: AppHandle, id: String) -> CmdResult<serde_json::Value> {
+    blocking(move || {
+        let data = app.state::<AppState>().store.load_template(&id)?;
+        // Los medios de la plantilla (intro, outro, logos) tienen que poder verse.
+        for m in data.get("media").and_then(|m| m.as_array()).into_iter().flatten() {
+            if let Some(p) = m.get("path").and_then(|p| p.as_str()) {
+                allow_asset(&app, Path::new(p));
+            }
+        }
+        Ok(data)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_template(app: AppHandle, id: String) -> CmdResult<()> {
+    blocking(move || app.state::<AppState>().store.delete_template(&id)).await
+}
+
 #[tauri::command]
 pub async fn autosave_project(app: AppHandle, project: Project, file: Option<String>) -> CmdResult<()> {
     blocking(move || app.state::<AppState>().store.autosave(&project, file.as_deref())).await

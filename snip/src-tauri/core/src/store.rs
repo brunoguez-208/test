@@ -50,6 +50,27 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<(), AppError> {
     })
 }
 
+/// Nombre de archivo (sin carpeta) de una ruta de Windows o POSIX.
+pub fn file_name(path: &str) -> String {
+    path.rsplit(['\\', '/']).next().unwrap_or(path).to_string()
+}
+
+/// `nombre.ext`, `nombre (2).ext`… que no esté en `used` (sin distinguir mayúsculas).
+pub fn unique_name(name: &str, used: &mut std::collections::HashSet<String>) -> String {
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    let mut n = 1;
+    loop {
+        let cand = if n == 1 { name.to_string() } else { format!("{stem} ({n}){ext}") };
+        if used.insert(cand.to_lowercase()) {
+            return cand;
+        }
+        n += 1;
+    }
+}
+
 fn safe_id(id: &str) -> Result<&str, AppError> {
     if !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         Ok(id)
@@ -177,6 +198,141 @@ impl Store {
         write_atomic(&self.recent_path(), &bytes)
     }
 
+    // ------------------------------ Versiones ------------------------------
+
+    fn versions_dir(&self, project_id: &str) -> Result<PathBuf, AppError> {
+        Ok(self.root.join("versions").join(safe_id(project_id)?))
+    }
+
+    /// Guarda una versión nueva (nunca pisa otra). Las automáticas se recortan a las últimas 20.
+    pub fn save_version(&self, p: &Project, name: Option<&str>, auto: bool, thumb: Option<&[u8]>, at: u64) -> Result<VersionInfo, AppError> {
+        let dir = self.versions_dir(&p.id)?;
+        let mut n = 0;
+        let id = loop {
+            let id = if n == 0 { format!("v{at}") } else { format!("v{at}-{n}") };
+            if !dir.join(format!("{id}.json")).exists() {
+                break id;
+            }
+            n += 1;
+        };
+        let thumbnail = match thumb {
+            Some(j) => {
+                let t = dir.join(format!("{id}.jpg"));
+                write_atomic(&t, j)?;
+                Some(t.to_string_lossy().into_owned())
+            }
+            None => None,
+        };
+        let info = VersionInfo {
+            id: id.clone(),
+            project_id: p.id.clone(),
+            name: name.map(str::trim).filter(|s| !s.is_empty()).map(String::from),
+            created_at: at,
+            auto,
+            duration: timeline::total_duration(p),
+            clip_count: p.clips.len(),
+            thumbnail,
+        };
+        let body = serde_json::json!({ "info": info, "project": p });
+        write_atomic(&dir.join(format!("{id}.json")), &serde_json::to_vec(&body).unwrap_or_default())?;
+        if auto {
+            let autos: Vec<VersionInfo> = self.list_versions(&p.id).into_iter().filter(|v| v.auto).collect();
+            for old in autos.iter().skip(MAX_AUTO_VERSIONS) {
+                let _ = std::fs::remove_file(dir.join(format!("{}.json", old.id)));
+                let _ = std::fs::remove_file(dir.join(format!("{}.jpg", old.id)));
+            }
+        }
+        Ok(info)
+    }
+
+    /// Versiones de un proyecto, de la más nueva a la más vieja.
+    pub fn list_versions(&self, project_id: &str) -> Vec<VersionInfo> {
+        let Ok(dir) = self.versions_dir(project_id) else { return vec![] };
+        let Ok(rd) = std::fs::read_dir(&dir) else { return vec![] };
+        let mut out: Vec<VersionInfo> = rd
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".json"))
+            .filter_map(|e| {
+                let v: serde_json::Value = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
+                serde_json::from_value(v.get("info")?.clone()).ok()
+            })
+            .collect();
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+        out
+    }
+
+    pub fn load_version(&self, project_id: &str, version_id: &str) -> Result<Project, AppError> {
+        let path = self.versions_dir(project_id)?.join(format!("{}.json", safe_id(version_id)?));
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(path).map_err(|e| AppError::from_io(&e))?)
+            .map_err(|e| AppError::with_detail(ErrorKind::BadProject, e.to_string()))?;
+        let text = v.get("project").map(|p| p.to_string()).ok_or_else(|| AppError::new(ErrorKind::BadProject))?;
+        migrate::parse(&text)
+    }
+
+    // ------------------------------ Plantillas ------------------------------
+
+    fn templates_dir(&self) -> PathBuf {
+        self.root.join("templates")
+    }
+
+    /// Guarda una plantilla. Los medios que usa (intro, outro, logos) se copian
+    /// a la carpeta de la plantilla, así sigue andando aunque se muevan.
+    pub fn save_template(&self, name: &str, summary: &str, mut data: serde_json::Value, thumb: Option<&[u8]>, at: u64) -> Result<TemplateInfo, AppError> {
+        let id = format!("t{at}");
+        let dir = self.templates_dir().join(&id);
+        std::fs::create_dir_all(&dir).map_err(|e| AppError::from_io(&e))?;
+        if let Some(media) = data.get_mut("media").and_then(|m| m.as_array_mut()) {
+            let mut used = std::collections::HashSet::new();
+            for m in media.iter_mut() {
+                let Some(src) = m.get("path").and_then(|p| p.as_str()).map(String::from) else { continue };
+                let src_path = Path::new(&src);
+                if !src_path.is_file() {
+                    return Err(AppError::with_message(ErrorKind::MediaMissing, format!("No se encontró {}", file_name(&src))));
+                }
+                let dest = dir.join(unique_name(&file_name(&src), &mut used));
+                std::fs::copy(src_path, &dest).map_err(|e| AppError::from_io(&e))?;
+                m["path"] = serde_json::Value::String(dest.to_string_lossy().into_owned());
+            }
+        }
+        let thumbnail = match thumb {
+            Some(j) => {
+                let t = dir.join("miniatura.jpg");
+                write_atomic(&t, j)?;
+                Some(t.to_string_lossy().into_owned())
+            }
+            None => None,
+        };
+        let info = TemplateInfo { id: id.clone(), name: name.trim().to_string(), created_at: at, thumbnail, summary: summary.to_string() };
+        let body = serde_json::json!({ "info": info, "data": data });
+        write_atomic(&dir.join("plantilla.json"), &serde_json::to_vec_pretty(&body).unwrap_or_default())?;
+        Ok(info)
+    }
+
+    pub fn list_templates(&self) -> Vec<TemplateInfo> {
+        let Ok(rd) = std::fs::read_dir(self.templates_dir()) else { return vec![] };
+        let mut out: Vec<TemplateInfo> = rd
+            .flatten()
+            .filter_map(|e| {
+                let v: serde_json::Value = serde_json::from_slice(&std::fs::read(e.path().join("plantilla.json")).ok()?).ok()?;
+                serde_json::from_value(v.get("info")?.clone()).ok()
+            })
+            .collect();
+        out.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+        out
+    }
+
+    pub fn load_template(&self, id: &str) -> Result<serde_json::Value, AppError> {
+        let path = self.templates_dir().join(safe_id(id)?).join("plantilla.json");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(path).map_err(|e| AppError::from_io(&e))?)
+            .map_err(|e| AppError::with_detail(ErrorKind::BadProject, e.to_string()))?;
+        v.get("data").cloned().ok_or_else(|| AppError::new(ErrorKind::BadProject))
+    }
+
+    pub fn delete_template(&self, id: &str) -> Result<(), AppError> {
+        let dir = self.templates_dir().join(safe_id(id)?);
+        std::fs::remove_dir_all(dir).map_err(|e| AppError::from_io(&e))
+    }
+
     pub fn remove_recent(&self, path: &str) -> Result<(), AppError> {
         let mut list = self.recent();
         list.retain(|r| r.path != path);
@@ -191,12 +347,62 @@ pub fn save_snip(path: &Path, p: &Project) -> Result<(), AppError> {
     write_atomic(path, text.as_bytes())
 }
 
-/// Abre un `.snip`: migra y devuelve también qué archivos faltan.
+/// Abre un `.snip`: migra y devuelve también qué archivos faltan. Las rutas
+/// relativas (proyectos empaquetados) se resuelven desde la carpeta del `.snip`.
 pub fn open_snip(path: &Path) -> Result<(Project, Vec<String>), AppError> {
     let text = std::fs::read_to_string(path).map_err(|e| AppError::from_io(&e))?;
-    let p = migrate::parse(&text)?;
+    let mut p = migrate::parse(&text)?;
+    if let Some(dir) = path.parent() {
+        for m in &mut p.media {
+            if is_relative_media(&m.path) {
+                m.path = dir.join(m.path.replace('\\', "/")).to_string_lossy().into_owned();
+            }
+        }
+    }
     let missing = missing_media(&p);
     Ok((p, missing))
+}
+
+/// ¿Ruta relativa? (ni `C:\…`, ni `\\servidor\…`, ni `/…`).
+pub fn is_relative_media(path: &str) -> bool {
+    let b = path.as_bytes();
+    let drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    !(path.is_empty() || drive || path.starts_with('\\') || path.starts_with('/'))
+}
+
+// ---------------------------------- Versiones ----------------------------------
+
+/// Una versión guardada de un proyecto (manual o automática al exportar).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionInfo {
+    pub id: String,
+    pub project_id: String,
+    pub name: Option<String>,
+    pub created_at: u64,
+    /// Automática (al exportar) o guardada a mano.
+    pub auto: bool,
+    pub duration: f64,
+    pub clip_count: usize,
+    pub thumbnail: Option<String>,
+}
+
+/// Versiones automáticas que se conservan por proyecto (las manuales, todas).
+pub const MAX_AUTO_VERSIONS: usize = 20;
+
+// --------------------------------- Plantillas ---------------------------------
+
+/// Plantilla ("Guardar como plantilla"): intro, outro, estilos de texto y
+/// preset de exportación. `data` lo arma el frontend; acá se guarda tal cual.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateInfo {
+    pub id: String,
+    pub name: String,
+    pub created_at: u64,
+    pub thumbnail: Option<String>,
+    #[serde(default)]
+    pub summary: String,
 }
 
 /// Ids de los medios cuyo archivo ya no está.
@@ -272,5 +478,52 @@ mod tests {
         assert_eq!(missing, vec!["m2".to_string(), "m3".to_string()]);
         std::fs::write(&f, "{").unwrap();
         assert_eq!(open_snip(&f).unwrap_err().kind, ErrorKind::BadProject);
+    }
+
+    #[test]
+    fn versions_never_overwrite_and_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = Store::new(dir.path());
+        let mut p = sample_project();
+        p.id = "proj".into();
+        let a = st.save_version(&p, Some("Antes del color"), false, Some(&[0xFF, 0xD8]), 100).unwrap();
+        p.name = "Cambiado".into();
+        let b = st.save_version(&p, None, true, None, 100).unwrap();
+        assert_ne!(a.id, b.id, "mismo instante: no se pisa");
+        let list = st.list_versions("proj");
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.iter().filter(|v| v.auto).count(), 1);
+        let named = list.iter().find(|v| !v.auto).unwrap();
+        assert_eq!(named.name.as_deref(), Some("Antes del color"));
+        assert!(named.thumbnail.as_deref().is_some_and(|t| Path::new(t).is_file()));
+        assert_ne!(st.load_version("proj", &a.id).unwrap().name, "Cambiado");
+        assert_eq!(st.load_version("proj", &b.id).unwrap().name, "Cambiado");
+        // Las automáticas se recortan; las manuales quedan.
+        for i in 0..(MAX_AUTO_VERSIONS + 5) {
+            st.save_version(&p, None, true, None, 200 + i as u64).unwrap();
+        }
+        let list = st.list_versions("proj");
+        assert_eq!(list.iter().filter(|v| v.auto).count(), MAX_AUTO_VERSIONS);
+        assert!(list.iter().any(|v| v.id == a.id));
+        assert!(st.load_version("proj", "../x").is_err());
+    }
+
+    #[test]
+    fn templates_copy_their_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = Store::new(dir.path().join("data"));
+        let intro = dir.path().join("intro.mp4");
+        std::fs::write(&intro, b"intro").unwrap();
+        let data = serde_json::json!({ "media": [{ "id": "m1", "path": intro.to_string_lossy() }], "export": { "format": "mp4" } });
+        let t = st.save_template("Canal", "intro + títulos", data, None, 5).unwrap();
+        std::fs::remove_file(&intro).unwrap();
+        let list = st.list_templates();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Canal");
+        let back = st.load_template(&t.id).unwrap();
+        let path = back["media"][0]["path"].as_str().unwrap();
+        assert!(Path::new(path).is_file(), "la plantilla tiene su copia: {path}");
+        st.delete_template(&t.id).unwrap();
+        assert!(st.list_templates().is_empty());
     }
 }
