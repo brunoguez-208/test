@@ -1,0 +1,290 @@
+// Renderer WebGL2 del preview: dibuja cada clip activo en un FBO del tamaño del
+// lienzo, resuelve la transición y copia al canvas con el fundido global.
+
+import { BLIT_FRAG, CLIP_FRAG, OVERLAY_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
+
+export interface ClipDraw {
+  source: TexImageSource;
+  /** Tamaño de visualización del original (con la rotación de los metadatos ya aplicada). */
+  srcW: number;
+  srcH: number;
+  crop: { x: number; y: number; w: number; h: number } | null;
+  rotate: number;
+  flipH: boolean;
+  flipV: boolean;
+  zoom: { zoom: number; cx: number; cy: number };
+  color: ColorUniforms;
+}
+
+export interface ColorUniforms {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  exposure: number;
+  gamma: number;
+  look: number[]; // mat3 (column-major)
+  lookMix: number;
+  sharpen: number;
+}
+
+export const NEUTRAL_COLOR: ColorUniforms = {
+  brightness: 0,
+  contrast: 1,
+  saturation: 1,
+  temperature: 0,
+  exposure: 0,
+  gamma: 1,
+  look: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  lookMix: 0,
+  sharpen: 0,
+};
+
+export interface FrameDraw {
+  a: ClipDraw | null;
+  b: ClipDraw | null;
+  transition: { kind: string; progress: number } | null;
+  fade: number;
+  /** Capas RGBA (premultiplicadas) del tamaño del lienzo, en orden. */
+  layers: TexImageSource[];
+}
+
+interface Program {
+  prog: WebGLProgram;
+  loc: Record<string, WebGLUniformLocation | null>;
+}
+
+interface Target {
+  fbo: WebGLFramebuffer;
+  tex: WebGLTexture;
+}
+
+/** Redondea al par más cercano (como force_divisible_by=2 de FFmpeg). */
+function even(x: number): number {
+  return Math.max(2, Math.round(x / 2) * 2);
+}
+
+/** Rectángulo del contenido encajado (scale decrease + pad centrado), en píxeles. */
+export function fitRect(srcW: number, srcH: number, W: number, H: number) {
+  const s = Math.min(W / srcW, H / srcH);
+  const w = Math.min(W, even(srcW * s));
+  const h = Math.min(H, even(srcH * s));
+  const x = Math.floor((W - w) / 2 / 2) * 2;
+  const y = Math.floor((H - h) / 2 / 2) * 2;
+  return { x, y, w, h };
+}
+
+export class Renderer {
+  readonly gl: WebGL2RenderingContext;
+  private clipProg: Program;
+  private transProg: Program;
+  private blitProg: Program;
+  private overlayProg: Program;
+  private vao: WebGLVertexArrayObject;
+  private targets: Target[] = [];
+  private tw = 0;
+  private th = 0;
+  private videoTex: WebGLTexture[] = [];
+  private layerTex: WebGLTexture;
+  lost = false;
+
+  constructor(readonly canvas: HTMLCanvasElement) {
+    const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: true, premultipliedAlpha: false });
+    if (!gl) throw new Error("WebGL2 no disponible");
+    this.gl = gl;
+    canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      this.lost = true;
+    });
+    this.clipProg = this.program(CLIP_FRAG, [
+      "uSize", "uTex", "uRect", "uCrop", "uRotate", "uFlip", "uZoom", "uColor", "uExposure", "uGamma", "uLook", "uLookMix", "uTexel", "uSharpen",
+    ]);
+    this.transProg = this.program(TRANSITION_FRAG, ["uSize", "uA", "uB", "uP", "uKind"]);
+    this.blitProg = this.program(BLIT_FRAG, ["uSize", "uSrc", "uSrcSize", "uFade"]);
+    this.overlayProg = this.program(OVERLAY_FRAG, ["uSize", "uBase", "uLayer", "uOpacity"]);
+    const vao = gl.createVertexArray()!;
+    gl.bindVertexArray(vao);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    for (const p of [this.clipProg, this.transProg, this.blitProg, this.overlayProg]) {
+      const loc = gl.getAttribLocation(p.prog, "aPos");
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    }
+    this.vao = vao;
+    this.videoTex = [this.texture(true), this.texture(true)];
+    this.layerTex = this.texture(false);
+  }
+
+  private program(frag: string, uniforms: string[]): Program {
+    const gl = this.gl;
+    const sh = (type: number, src: string) => {
+      const s = gl.createShader(type)!;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || "shader");
+      return s;
+    };
+    const prog = gl.createProgram()!;
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, frag));
+    gl.bindAttribLocation(prog, 0, "aPos");
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
+    const loc: Record<string, WebGLUniformLocation | null> = {};
+    for (const u of uniforms) loc[u] = gl.getUniformLocation(prog, u);
+    return { prog, loc };
+  }
+
+  private texture(mip: boolean): WebGLTexture {
+    const gl = this.gl;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  /** FBOs del tamaño del lienzo de render. */
+  private ensureTargets(w: number, h: number) {
+    if (this.tw === w && this.th === h && this.targets.length) return;
+    const gl = this.gl;
+    for (const t of this.targets) {
+      gl.deleteFramebuffer(t.fbo);
+      gl.deleteTexture(t.tex);
+    }
+    this.targets = [];
+    for (let i = 0; i < 3; i++) {
+      const tex = this.texture(false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      const fbo = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      this.targets.push({ fbo, tex });
+    }
+    this.tw = w;
+    this.th = h;
+  }
+
+  private drawClip(c: ClipDraw, slot: number, target: Target, w: number, h: number, downscale: boolean) {
+    const gl = this.gl;
+    const P = this.clipProg;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(P.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.videoTex[slot]);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c.source);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, downscale ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+    if (downscale) gl.generateMipmap(gl.TEXTURE_2D);
+    const crop = c.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+    const rot = (((Math.round(c.rotate / 90) % 4) + 4) % 4) as 0 | 1 | 2 | 3;
+    let cw = c.srcW * crop.w;
+    let ch = c.srcH * crop.h;
+    if (rot % 2 === 1) [cw, ch] = [ch, cw];
+    const r = fitRect(cw, ch, w, h);
+    gl.uniform2f(P.loc.uSize, w, h);
+    gl.uniform1i(P.loc.uTex, 0);
+    gl.uniform4f(P.loc.uRect, r.x, r.y, r.w, r.h);
+    gl.uniform4f(P.loc.uCrop, crop.x, crop.y, crop.w, crop.h);
+    gl.uniform1i(P.loc.uRotate, rot);
+    gl.uniform2f(P.loc.uFlip, c.flipH ? 1 : 0, c.flipV ? 1 : 0);
+    gl.uniform3f(P.loc.uZoom, Math.max(1, c.zoom.zoom), c.zoom.cx, c.zoom.cy);
+    const col = c.color;
+    gl.uniform4f(P.loc.uColor, col.brightness, col.contrast, col.saturation, col.temperature);
+    gl.uniform1f(P.loc.uExposure, col.exposure);
+    gl.uniform1f(P.loc.uGamma, col.gamma);
+    gl.uniformMatrix3fv(P.loc.uLook, false, col.look);
+    gl.uniform1f(P.loc.uLookMix, col.lookMix);
+    gl.uniform2f(P.loc.uTexel, 1 / Math.max(1, c.srcW), 1 / Math.max(1, c.srcH));
+    gl.uniform1f(P.loc.uSharpen, col.sharpen);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /**
+   * Dibuja un cuadro. `renderW/H` es la resolución interna (el lienzo del
+   * proyecto o menos, para el preview); el canvas se estira con CSS.
+   */
+  render(f: FrameDraw, renderW: number, renderH: number) {
+    if (this.lost) return;
+    const gl = this.gl;
+    gl.bindVertexArray(this.vao);
+    this.ensureTargets(renderW, renderH);
+    const [ta, tb, tc] = this.targets;
+    const clear = (t: Target) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+      gl.viewport(0, 0, renderW, renderH);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    };
+    const down = (c: ClipDraw) => c.srcW > renderW * 1.5 || c.srcH > renderH * 1.5;
+    if (f.a) this.drawClip(f.a, 0, ta, renderW, renderH, down(f.a));
+    else clear(ta);
+    let result = ta;
+    if (f.b && f.transition) {
+      this.drawClip(f.b, 1, tb, renderW, renderH, down(f.b));
+      const P = this.transProg;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, tc.fbo);
+      gl.viewport(0, 0, renderW, renderH);
+      gl.useProgram(P.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, ta.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, tb.tex);
+      gl.uniform2f(P.loc.uSize, renderW, renderH);
+      gl.uniform1i(P.loc.uA, 0);
+      gl.uniform1i(P.loc.uB, 1);
+      gl.uniform1f(P.loc.uP, Math.min(1, Math.max(0, f.transition.progress)));
+      gl.uniform1i(P.loc.uKind, TRANSITION_INDEX[f.transition.kind] ?? 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      result = tc;
+    }
+    // Capas (texto, subtítulos, logos): alternando entre dos FBO.
+    for (const layer of f.layers) {
+      const dst = result === tc ? tb : tc;
+      const P = this.overlayProg;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+      gl.viewport(0, 0, renderW, renderH);
+      gl.useProgram(P.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, result.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.layerTex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.uniform2f(P.loc.uSize, renderW, renderH);
+      gl.uniform1i(P.loc.uBase, 0);
+      gl.uniform1i(P.loc.uLayer, 1);
+      gl.uniform1f(P.loc.uOpacity, 1);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      result = dst;
+    }
+    // Al canvas.
+    const P = this.blitProg;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(P.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, result.tex);
+    gl.uniform2f(P.loc.uSize, this.canvas.width, this.canvas.height);
+    gl.uniform2f(P.loc.uSrcSize, renderW, renderH);
+    gl.uniform1i(P.loc.uSrc, 0);
+    gl.uniform1f(P.loc.uFade, Math.min(1, Math.max(0, f.fade)));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  dispose() {
+    const gl = this.gl;
+    for (const t of this.targets) {
+      gl.deleteFramebuffer(t.fbo);
+      gl.deleteTexture(t.tex);
+    }
+    this.targets = [];
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+}

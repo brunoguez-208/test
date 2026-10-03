@@ -1,53 +1,149 @@
 import { useEffect } from "react";
-import { shortcutFor } from "../lib/shortcuts";
-import { useSnip } from "../store/snip";
-import { openWithDialog, startExport } from "../store/controller";
-import { shuttle, stepFrames, stepSeconds, togglePlay } from "../lib/playback";
+import { nextShuttleRate, shortcutFor, type ShortcutAction } from "../lib/shortcuts";
+import { activeProject, activeTab, edit, redoEdit, setMarks, setSelection, undoEdit, useEditor } from "../store/editor";
+import {
+  closeTab,
+  enqueueExport,
+  notifyEditError,
+  openWithDialog,
+  player,
+  saveProject,
+  switchTab,
+} from "../store/controller";
+import { addMarker, adjacentMarker, deleteClips, deleteRange, splitAt } from "../project/ops";
+import { totalDuration } from "../project/timeline";
+import { zoomTimeline } from "../components/timeline/zoom";
 
-/** Atajos globales. Se ignoran mientras se escribe en un input o hay un diálogo abierto. */
+let shuttleRate = 0;
+
+/** Ejecuta un atajo (exportado para los tests). */
+export function runShortcut(action: ShortcutAction, repeat = false): boolean {
+  const st = useEditor.getState();
+  if (action.type === "open") {
+    void openWithDialog();
+    return true;
+  }
+  if (action.type === "help") {
+    useEditor.setState({ shortcutsOpen: !st.shortcutsOpen });
+    return true;
+  }
+  if (action.type === "nextTab" || action.type === "prevTab") {
+    switchTab(action.type === "nextTab" ? 1 : -1);
+    return true;
+  }
+  const tab = activeTab(st);
+  const p = activeProject(st);
+  if (st.phase !== "editor" || !tab || !p) return false;
+  if (repeat && ["togglePlay", "export", "shuttle", "split", "marker", "save", "closeTab", "delete"].includes(action.type)) return true;
+  const pl = player();
+  const t = st.time;
+  switch (action.type) {
+    case "togglePlay":
+      shuttleRate = 0;
+      pl.toggle();
+      break;
+    case "shuttle":
+      shuttleRate = nextShuttleRate(pl.playing ? pl.rate : 0, action.key);
+      pl.setRate(shuttleRate);
+      break;
+    case "stepFrames":
+      pl.step(action.frames);
+      break;
+    case "stepSeconds":
+      pl.pause();
+      pl.seek(t + action.seconds);
+      break;
+    case "home":
+      pl.pause();
+      pl.seek(0);
+      break;
+    case "end":
+      pl.pause();
+      pl.seek(totalDuration(p));
+      break;
+    case "markIn":
+      setMarks(t, tab.markOut !== null && tab.markOut <= t ? null : tab.markOut);
+      break;
+    case "markOut": {
+      const end = Math.min(totalDuration(p), t + pl.frameDur());
+      setMarks(tab.markIn !== null && tab.markIn >= end ? null : tab.markIn, end);
+      break;
+    }
+    case "split":
+      try {
+        edit((q) => splitAt(q, t));
+      } catch (e) {
+        notifyEditError(e);
+      }
+      break;
+    case "delete":
+      try {
+        if (tab.selection.length) {
+          edit((q) => deleteClips(q, tab.selection));
+          setSelection([]);
+        } else if (tab.markIn !== null || tab.markOut !== null) {
+          edit((q) => deleteRange(q, tab.markIn ?? 0, tab.markOut ?? totalDuration(q)));
+          setMarks(null, null);
+        }
+      } catch (e) {
+        notifyEditError(e);
+      }
+      break;
+    case "marker":
+      edit((q) => addMarker(q, t));
+      break;
+    case "nextMarker":
+    case "prevMarker": {
+      const m = adjacentMarker(p, t, action.type === "nextMarker" ? 1 : -1);
+      if (m !== null) {
+        pl.pause();
+        pl.seek(m);
+      }
+      break;
+    }
+    case "undo":
+      undoEdit();
+      break;
+    case "redo":
+      redoEdit();
+      break;
+    case "save":
+      void saveProject();
+      break;
+    case "export":
+      void enqueueExport();
+      break;
+    case "zoomIn":
+      zoomTimeline(1.5);
+      break;
+    case "zoomOut":
+      zoomTimeline(1 / 1.5);
+      break;
+    case "closeTab":
+      void closeTab(tab.id);
+      break;
+    case "escape":
+      if (tab.selection.length) setSelection([]);
+      else if (tab.markIn !== null || tab.markOut !== null) setMarks(null, null);
+      else if (st.queueOpen) useEditor.setState({ queueOpen: false });
+      else return false;
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+/** Atajos globales. Se ignoran mientras se escribe o hay un diálogo abierto. */
 export function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const st = useSnip.getState();
-      if (st.confirmation) return;
+      if (useEditor.getState().confirm) return;
+      if (document.querySelector("[data-modal='true']")) return;
       const action = shortcutFor(e, e.target as HTMLElement | null);
       if (!action) return;
-
-      // Los que no necesitan un video cargado.
-      if (action.type === "open") {
-        e.preventDefault();
-        void openWithDialog();
-        return;
-      }
-      if (st.phase !== "editor" || !st.media) return;
-      const busy = st.exportState.status === "running";
-      e.preventDefault();
-      if (e.repeat && (action.type === "togglePlay" || action.type === "export" || action.type === "shuttle")) return;
-
-      switch (action.type) {
-        case "togglePlay":
-          togglePlay();
-          break;
-        case "markIn":
-          if (!busy) st.markIn();
-          break;
-        case "markOut":
-          if (!busy) st.markOut();
-          break;
-        case "stepFrames":
-          stepFrames(action.frames);
-          break;
-        case "stepSeconds":
-          stepSeconds(action.seconds);
-          break;
-        case "shuttle":
-          shuttle(action.key);
-          break;
-        case "export":
-          if (!busy) void startExport();
-          break;
-      }
+      if (runShortcut(action, e.repeat)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

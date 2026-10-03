@@ -1,11 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDownload20Regular, Warning20Filled } from "@fluentui/react-icons";
-import { useSnip } from "../store/snip";
+import { useEditor } from "../store/editor";
 
-/** Capa de drop sobre el editor: reacciona distinto si el archivo no es MP4. */
+/** Capa de drop sobre el editor: los videos se suman al proyecto; reacciona distinto si no sirve. */
 export function DropOverlay() {
-  const drag = useSnip((s) => s.drag);
-  const phase = useSnip((s) => s.phase);
+  const drag = useEditor((s) => s.drag);
+  const phase = useEditor((s) => s.phase);
   const show = phase === "editor" && drag !== "none";
   const valid = drag === "valid";
   return (
@@ -28,11 +28,11 @@ export function DropOverlay() {
             animate={{ scale: 1, x: valid ? 0 : [0, -8, 7, -4, 0] }}
             transition={{ duration: 0.35 }}
           >
-            <span className="drop-icon flex h-14 w-14 items-center justify-center rounded-full text-[28px]">
-              {valid ? <ArrowDownload20Regular /> : <Warning20Filled />}
-            </span>
-            <p className="t-subtitle">{valid ? "Soltalo para abrirlo" : "Por ahora solo MP4"}</p>
-            <p className="t-body text-[var(--text-secondary)]">{valid ? "Reemplaza al video actual." : "Ese archivo no se puede abrir."}</p>
+            <span className="drop-icon flex h-14 w-14 items-center justify-center rounded-full text-[28px]">{valid ? <ArrowDownload20Regular /> : <Warning20Filled />}</span>
+            <p className="t-subtitle">{valid ? "Soltalo para sumarlo al proyecto" : "Ese formato no se abre"}</p>
+            <p className="t-body text-[var(--text-secondary)]">
+              {valid ? "Los videos van al final del timeline; un audio va a la pista de música." : "Snip abre MP4, MOV, MKV, WebM y proyectos .snip."}
+            </p>
           </motion.div>
         </motion.div>
       )}

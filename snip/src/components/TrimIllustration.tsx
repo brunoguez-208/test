@@ -1,6 +1,6 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform, type AnimationPlaybackControls } from "motion/react";
 import { useEffect } from "react";
-import type { DragHint } from "../store/snip";
+import type { DragHint } from "../store/editor";
 
 const W = 400;
 const H = 104;

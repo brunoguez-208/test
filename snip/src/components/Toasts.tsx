@@ -1,22 +1,21 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
-import { useSnip, type Toast } from "../store/snip";
+import { dismissToast, useEditor, type Toast } from "../store/editor";
 import { InfoBar } from "./ui/InfoBar";
+import { Button } from "./ui/Button";
 
 function AutoDismiss({ toast }: { toast: Toast }) {
-  const dismiss = useSnip((s) => s.dismissToast);
   useEffect(() => {
-    const ms = toast.severity === "critical" ? 9000 : 5000;
-    const t = window.setTimeout(() => dismiss(toast.id), ms);
+    const ms = toast.action ? 9000 : toast.severity === "critical" ? 9000 : 5000;
+    const t = window.setTimeout(() => dismissToast(toast.id), ms);
     return () => window.clearTimeout(t);
-  }, [toast, dismiss]);
+  }, [toast]);
   return null;
 }
 
 /** Avisos tipo InfoBar flotantes, arriba al centro. */
 export function Toasts() {
-  const toasts = useSnip((s) => s.toasts);
-  const dismiss = useSnip((s) => s.dismissToast);
+  const toasts = useEditor((s) => s.toasts);
   return (
     <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--titlebar-h)+10px)] z-[70] flex flex-col items-center gap-2 px-4">
       <AnimatePresence initial={false}>
@@ -31,7 +30,28 @@ export function Toasts() {
             transition={{ type: "spring", stiffness: 500, damping: 36 }}
           >
             <AutoDismiss toast={t} />
-            <InfoBar severity={t.severity} title={t.title} message={t.message} onClose={() => dismiss(t.id)} className="floating" testId={`toast-${t.severity}`} />
+            <InfoBar
+              severity={t.severity}
+              title={t.title}
+              message={t.message}
+              onClose={() => dismissToast(t.id)}
+              className="floating"
+              testId={`toast-${t.severity}`}
+              action={
+                t.action && (
+                  <Button
+                    className="!h-7"
+                    onClick={() => {
+                      t.action!.run();
+                      dismissToast(t.id);
+                    }}
+                    data-testid="toast-action"
+                  >
+                    {t.action.label}
+                  </Button>
+                )
+              }
+            />
           </motion.div>
         ))}
       </AnimatePresence>

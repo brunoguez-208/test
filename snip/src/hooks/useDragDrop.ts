@@ -1,35 +1,47 @@
 import { useEffect } from "react";
 import { onFileDrag } from "../lib/platform";
-import { isMp4 } from "../lib/files";
-import { useSnip } from "../store/snip";
-import { openFile, warnNotMp4 } from "../store/controller";
+import { isAudio, isProjectFile, isVideo } from "../lib/files";
+import { useEditor } from "../store/editor";
+import { addMusicFile, addVideos, openPaths, warnUnsupported } from "../store/controller";
 
-/** Drag & drop de archivos sobre la ventana: reacciona distinto si no es MP4. */
+export type DropKind = "open" | "add" | "music" | "invalid";
+
+/** Qué pasaría al soltar estos archivos (para que la zona reaccione antes de soltar). */
+export function dropKind(paths: string[], inEditor: boolean): DropKind {
+  if (!paths.length) return "invalid";
+  if (paths.every((p) => isVideo(p) || isProjectFile(p))) {
+    if (inEditor && paths.every(isVideo)) return "add";
+    return "open";
+  }
+  if (inEditor && paths.length === 1 && isAudio(paths[0])) return "music";
+  return "invalid";
+}
+
+/** Drag & drop de archivos sobre la ventana. */
 export function useDragDrop() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    const set = (drag: "none" | "valid" | "invalid") => useSnip.setState({ drag });
+    let lastKind: DropKind = "invalid";
     onFileDrag((s) => {
+      const st = useEditor.getState();
+      const inEditor = st.phase === "editor";
       if (s.type === "enter") {
-        const ok = s.paths.length === 1 && isMp4(s.paths[0]);
-        set(ok ? "valid" : "invalid");
+        lastKind = dropKind(s.paths, inEditor);
+        useEditor.setState({ drag: lastKind === "invalid" ? "invalid" : "valid" });
       } else if (s.type === "leave") {
-        set("none");
+        useEditor.setState({ drag: "none" });
       } else if (s.type === "drop") {
-        const ok = s.paths.length === 1 && isMp4(s.paths[0]);
-        if (ok) {
-          set("none");
-          void openFile(s.paths[0]);
-        } else {
-          // Dejamos ver la animación de "se cierra" un instante.
-          window.setTimeout(() => set("none"), 650);
-          if (s.paths.length > 1 && s.paths.some(isMp4)) {
-            useSnip.getState().pushToast({ severity: "caution", title: "Un video a la vez", message: "Soltá un solo archivo .mp4." });
-          } else {
-            warnNotMp4();
-          }
+        const kind = dropKind(s.paths, inEditor);
+        if (kind === "invalid") {
+          window.setTimeout(() => useEditor.setState({ drag: "none" }), 650);
+          warnUnsupported();
+          return;
         }
+        useEditor.setState({ drag: "none" });
+        if (kind === "add") void addVideos(s.paths);
+        else if (kind === "music") void addMusicFile(s.paths[0]);
+        else void openPaths(s.paths);
       }
     })
       .then((u) => {
@@ -45,4 +57,9 @@ export function useDragDrop() {
       unlisten?.();
     };
   }, []);
+}
+
+/** Tipo de drop en curso (para los textos de la capa de drop). */
+export function useDropKindLabel(): DropKind {
+  return useEditor((s) => (s.drag === "invalid" ? "invalid" : s.phase === "editor" ? "add" : "open"));
 }

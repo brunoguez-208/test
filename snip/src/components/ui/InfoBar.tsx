@@ -6,7 +6,7 @@ import {
   Info20Filled,
   Warning20Filled,
 } from "@fluentui/react-icons";
-import type { Severity } from "../../store/snip";
+import type { Severity } from "../../store/editor";
 
 const ICONS: Record<Severity, ReactNode> = {
   info: <Info20Filled />,

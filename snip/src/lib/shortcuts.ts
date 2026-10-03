@@ -8,7 +8,24 @@ export type ShortcutAction =
   | { type: "stepSeconds"; seconds: number }
   | { type: "shuttle"; key: "j" | "k" | "l" }
   | { type: "export" }
-  | { type: "open" };
+  | { type: "open" }
+  | { type: "split" }
+  | { type: "delete" }
+  | { type: "marker" }
+  | { type: "nextMarker" }
+  | { type: "prevMarker" }
+  | { type: "undo" }
+  | { type: "redo" }
+  | { type: "save" }
+  | { type: "zoomIn" }
+  | { type: "zoomOut" }
+  | { type: "nextTab" }
+  | { type: "prevTab" }
+  | { type: "closeTab" }
+  | { type: "help" }
+  | { type: "home" }
+  | { type: "end" }
+  | { type: "escape" };
 
 export interface KeyLike {
   key: string;
@@ -44,15 +61,32 @@ export function shortcutFor(e: KeyLike, target?: TargetLike | null): ShortcutAct
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
 
   if (ctrl && !e.altKey) {
+    if (key === "Tab") return e.shiftKey ? { type: "prevTab" } : { type: "nextTab" };
     if (key === "e") return { type: "export" };
     if (key === "o") return { type: "open" };
+    if (key === "s") return { type: "save" };
+    if (key === "w") return { type: "closeTab" };
+    if (key === "z") return e.shiftKey ? { type: "redo" } : { type: "undo" };
+    if (key === "y") return { type: "redo" };
+    if (key === "m" && e.shiftKey) return { type: "prevMarker" };
+    if (key === "+" || key === "=" || e.code === "NumpadAdd") return { type: "zoomIn" };
+    if (key === "-" || e.code === "NumpadSubtract") return { type: "zoomOut" };
     return null;
   }
   if (e.altKey || ctrl) return null;
 
   if (key === " " || e.code === "Space") return { type: "togglePlay" };
+  if (key === "?" || (key === "/" && e.shiftKey)) return { type: "help" };
+  if (key === "+" || key === "=" || e.code === "NumpadAdd") return { type: "zoomIn" };
+  if (key === "-" || key === "_" || e.code === "NumpadSubtract") return { type: "zoomOut" };
+  if (key === "Delete" || key === "Backspace") return { type: "delete" };
+  if (key === "Home") return { type: "home" };
+  if (key === "End") return { type: "end" };
+  if (key === "Escape") return { type: "escape" };
   if (key === "i") return { type: "markIn" };
   if (key === "o") return { type: "markOut" };
+  if (key === "s") return { type: "split" };
+  if (key === "m") return e.shiftKey ? { type: "nextMarker" } : { type: "marker" };
   if (key === "ArrowLeft") return e.shiftKey ? { type: "stepSeconds", seconds: -1 } : { type: "stepFrames", frames: -1 };
   if (key === "ArrowRight") return e.shiftKey ? { type: "stepSeconds", seconds: 1 } : { type: "stepFrames", frames: 1 };
   if (key === "j" || key === "k" || key === "l") return { type: "shuttle", key };
@@ -69,3 +103,42 @@ export function nextShuttleRate(current: number, key: "j" | "k" | "l"): number {
   if (Math.sign(current) !== dir) return dir;
   return dir * Math.min(8, Math.abs(current) * 2);
 }
+
+/** Lista para el panel de atajos (?). */
+export const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
+  {
+    title: "Reproducción",
+    items: [
+      ["Espacio", "Reproducir / pausa"],
+      ["J / K / L", "Atrás / pausa / adelante (repetir acelera)"],
+      ["← / →", "Un cuadro"],
+      ["Shift + ← / →", "Un segundo"],
+      ["Inicio / Fin", "Ir al principio / al final"],
+    ],
+  },
+  {
+    title: "Edición",
+    items: [
+      ["S", "Dividir en el playhead"],
+      ["Supr", "Borrar la selección o el rango I/O"],
+      ["I / O", "Marcar inicio / fin del rango"],
+      ["M", "Agregar marcador"],
+      ["Shift + M", "Ir al marcador siguiente"],
+      ["Ctrl + Shift + M", "Ir al marcador anterior"],
+      ["Ctrl + Z", "Deshacer"],
+      ["Ctrl + Y", "Rehacer"],
+    ],
+  },
+  {
+    title: "Proyecto",
+    items: [
+      ["Ctrl + O", "Abrir video o proyecto"],
+      ["Ctrl + S", "Guardar el proyecto (.snip)"],
+      ["Ctrl + E", "Exportar"],
+      ["Ctrl + Tab", "Pestaña siguiente"],
+      ["Ctrl + W", "Cerrar pestaña"],
+      ["+ / −", "Zoom del timeline (también Ctrl + rueda)"],
+      ["?", "Este panel"],
+    ],
+  },
+];

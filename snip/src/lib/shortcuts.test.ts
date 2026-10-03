@@ -55,3 +55,36 @@ describe("atajos", () => {
     expect(nextShuttleRate(4, "k")).toBe(0);
   });
 });
+
+describe("atajos nuevos del editor", () => {
+  it("edición: S, Supr, M y marcadores", () => {
+    expect(shortcutFor(k("s"))).toEqual({ type: "split" });
+    expect(shortcutFor(k("Delete"))).toEqual({ type: "delete" });
+    expect(shortcutFor(k("Backspace"))).toEqual({ type: "delete" });
+    expect(shortcutFor(k("m"))).toEqual({ type: "marker" });
+    expect(shortcutFor(k("M", { shiftKey: true }))).toEqual({ type: "nextMarker" });
+    expect(shortcutFor(k("M", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "prevMarker" });
+  });
+
+  it("deshacer, rehacer, guardar, zoom, pestañas y ayuda", () => {
+    expect(shortcutFor(k("z", { ctrlKey: true }))).toEqual({ type: "undo" });
+    expect(shortcutFor(k("y", { ctrlKey: true }))).toEqual({ type: "redo" });
+    expect(shortcutFor(k("Z", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "redo" });
+    expect(shortcutFor(k("s", { ctrlKey: true }))).toEqual({ type: "save" });
+    expect(shortcutFor(k("+"))).toEqual({ type: "zoomIn" });
+    expect(shortcutFor(k("-"))).toEqual({ type: "zoomOut" });
+    expect(shortcutFor(k("=", { ctrlKey: true }))).toEqual({ type: "zoomIn" });
+    expect(shortcutFor(k("Tab", { ctrlKey: true }))).toEqual({ type: "nextTab" });
+    expect(shortcutFor(k("Tab", { ctrlKey: true, shiftKey: true }))).toEqual({ type: "prevTab" });
+    expect(shortcutFor(k("w", { ctrlKey: true }))).toEqual({ type: "closeTab" });
+    expect(shortcutFor(k("?", { shiftKey: true }))).toEqual({ type: "help" });
+    expect(shortcutFor(k("Home"))).toEqual({ type: "home" });
+  });
+
+  it("los nuevos también se ignoran escribiendo", () => {
+    const input = { tagName: "INPUT", type: "text" };
+    for (const e of [k("s"), k("Delete"), k("m"), k("z", { ctrlKey: true }), k("s", { ctrlKey: true })]) {
+      expect(shortcutFor(e, input)).toBeNull();
+    }
+  });
+});

@@ -1,3 +1,5 @@
+import type { ExportSettings, OutputFormat, Project } from "../project/model";
+
 // Tipos compartidos con Rust (mismos nombres serde, camelCase).
 
 export interface MediaInfo {
@@ -75,6 +77,12 @@ export interface ProgressReport {
 }
 
 export type ErrorKind =
+  | "unsupportedFormat"
+  | "badProject"
+  | "unsupported"
+  | "noAudio"
+  | "mediaMissing"
+  | "network"
   | "notMp4"
   | "notFound"
   | "noVideo"
@@ -129,4 +137,90 @@ export function toAppError(e: unknown): AppError {
   if (isAppError(e)) return e;
   const detail = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
   return { kind: "unknown", message: "Algo salió mal al procesar el video.", detail };
+}
+
+// ------------------------------- Snip 2 -------------------------------
+
+
+export interface ExportJob {
+  project: Project;
+  settings?: ExportSettings | null;
+  window?: { start: number; end: number } | null;
+  output?: string | null;
+  label?: string | null;
+  saveProject?: boolean;
+  raster?: unknown;
+}
+
+export type Stage = "preparing" | "copying" | "encoding" | "firstPass" | "secondPass" | "retrying";
+
+export interface JobProgress {
+  percent: number;
+  speed: number | null;
+  etaSecs: number | null;
+  stage: Stage;
+}
+
+export interface ProjectOutcome {
+  output: string;
+  projectFile: string | null;
+  mode: "fast" | "precise";
+  format: OutputFormat;
+  encoder: EncoderId | null;
+  fellBack: boolean;
+  width: number;
+  height: number;
+  duration: number;
+  sizeBytes: number;
+  elapsedSecs: number;
+  sizeRetries: number;
+}
+
+export type ItemStatus =
+  | { state: "queued" }
+  | { state: "running"; progress: JobProgress | null }
+  | { state: "done"; outcome: ProjectOutcome }
+  | { state: "failed"; error: AppError }
+  | { state: "cancelled" };
+
+export interface QueueItem {
+  id: number;
+  title: string;
+  projectId: string;
+  status: ItemStatus;
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  duration: number;
+  updatedAt: number;
+  clipCount: number;
+  thumbnail: string | null;
+  file: string | null;
+}
+
+export interface RecentFile {
+  path: string;
+  kind: "video" | "project";
+  openedAt: number;
+}
+
+export interface PlatformPreset {
+  id: string;
+  group: string;
+  label: string;
+  tier: string | null;
+  megabytes: number;
+}
+
+export interface PlatformLimits {
+  verifiedAt: string;
+  targetRatio: number;
+  presets: PlatformPreset[];
+}
+
+export interface OpenedProject {
+  project: Project;
+  missing: string[];
 }

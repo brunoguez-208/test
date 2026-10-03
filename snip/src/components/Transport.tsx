@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowRepeatAll20Regular,
+  Camera20Regular,
   Next20Filled,
   Pause24Filled,
   Play24Filled,
@@ -10,9 +11,11 @@ import {
   Speaker020Regular,
   SpeakerMute20Regular,
 } from "@fluentui/react-icons";
-import { useSnip } from "../store/snip";
-import { stepFrames, togglePlay } from "../lib/playback";
+import { activeTab, saveVolume, useEditor } from "../store/editor";
+import { player, saveFramePng } from "../store/controller";
 import { secondsToTimecode } from "../lib/timecode";
+import { canvasFps, type Project } from "../project/model";
+import { totalDuration } from "../project/timeline";
 import { IconButton } from "./ui/Button";
 import { Tooltip } from "./ui/Tooltip";
 import { Slider } from "./ui/Slider";
@@ -25,31 +28,49 @@ function VolumeIcon({ volume, muted }: { volume: number; muted: boolean }) {
 }
 
 /** Controles de reproducción debajo del preview. */
-export function Transport() {
-  const media = useSnip((s) => s.media);
-  const current = useSnip((s) => s.current);
-  const playing = useSnip((s) => s.playing);
-  const loop = useSnip((s) => s.loop);
-  const toggleLoop = useSnip((s) => s.toggleLoop);
-  const volume = useSnip((s) => s.volume);
-  const muted = useSnip((s) => s.muted);
-  const setVolume = useSnip((s) => s.setVolume);
-  const toggleMute = useSnip((s) => s.toggleMute);
-  if (!media) return null;
-  const fps = media.fps;
+export function Transport({ project }: { project: Project }) {
+  const time = useEditor((s) => s.time);
+  const playing = useEditor((s) => s.playing);
+  const loop = useEditor((s) => s.loop);
+  const volume = useEditor((s) => s.volume);
+  const muted = useEditor((s) => s.muted);
+  const tab = useEditor((s) => activeTab(s));
+  const fps = canvasFps(project.canvas);
+  const total = totalDuration(project);
+  const hasRange = !!tab && (tab.markIn !== null || tab.markOut !== null);
+
+  const setVolume = (v: number) => {
+    const m = v === 0;
+    useEditor.setState({ volume: v, muted: m });
+    player().setVolume(v, m);
+    saveVolume(v, m);
+  };
+  const toggleMute = () => {
+    const next = !muted;
+    const vol = !next && volume === 0 ? 0.5 : volume;
+    useEditor.setState({ muted: next, volume: vol });
+    player().setVolume(vol, next);
+    saveVolume(vol, next);
+  };
+  const toggleLoop = () => {
+    const next = !loop;
+    useEditor.setState({ loop: next });
+    const t = activeTab();
+    player().loop = next ? [t?.markIn ?? 0, t?.markOut ?? total] : null;
+  };
 
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-1" data-testid="transport">
       <div className="t-body tabular flex items-baseline gap-1.5">
         <span className="text-[var(--text-primary)]" data-testid="current-tc">
-          {secondsToTimecode(current, fps)}
+          {secondsToTimecode(time, fps)}
         </span>
-        <span className="text-[var(--text-tertiary)]">/ {secondsToTimecode(media.duration, fps)}</span>
+        <span className="text-[var(--text-tertiary)]" data-testid="total-tc">/ {secondsToTimecode(total, fps)}</span>
       </div>
 
       <div className="flex items-center gap-2">
         <Tooltip content={<>Cuadro anterior <kbd className="kbd ml-1">←</kbd></>}>
-          <IconButton label="Cuadro anterior" onClick={() => stepFrames(-1)} size={36}>
+          <IconButton label="Cuadro anterior" onClick={() => player().step(-1)} size={36}>
             <Previous20Filled />
           </IconButton>
         </Tooltip>
@@ -57,12 +78,13 @@ export function Transport() {
           <motion.button
             type="button"
             aria-label={playing ? "Pausa" : "Reproducir"}
-            onClick={() => togglePlay()}
+            onClick={() => player().toggle()}
             whileTap={{ scale: 0.92 }}
             whileHover={{ scale: 1.04 }}
             transition={{ type: "spring", stiffness: 600, damping: 30 }}
             className="btn-accent relative flex h-10 w-10 items-center justify-center rounded-full outline-none"
             data-testid="play-toggle"
+            disabled={!project.clips.length}
           >
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.span
@@ -79,25 +101,30 @@ export function Transport() {
           </motion.button>
         </Tooltip>
         <Tooltip content={<>Cuadro siguiente <kbd className="kbd ml-1">→</kbd></>}>
-          <IconButton label="Cuadro siguiente" onClick={() => stepFrames(1)} size={36}>
+          <IconButton label="Cuadro siguiente" onClick={() => player().step(1)} size={36}>
             <Next20Filled />
           </IconButton>
         </Tooltip>
       </div>
 
       <div className="flex items-center justify-end gap-1">
-        <Tooltip content={loop ? "Loop activado" : "Repetir el recorte en loop"}>
+        <Tooltip content="Guardar este cuadro como PNG">
+          <IconButton label="Guardar cuadro como PNG" onClick={() => void saveFramePng()} disabled={!project.clips.length} data-testid="save-png">
+            <Camera20Regular />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content={loop ? "Loop activado" : hasRange ? "Repetir el rango I/O" : "Repetir todo"}>
           <IconButton label="Loop" active={loop} onClick={toggleLoop} data-testid="loop-toggle">
             <ArrowRepeatAll20Regular />
           </IconButton>
         </Tooltip>
         <div className="ml-1 flex items-center gap-1">
           <Tooltip content={muted ? "Activar sonido" : "Silenciar"}>
-            <IconButton label={muted ? "Activar sonido" : "Silenciar"} onClick={toggleMute} disabled={!media.hasAudio}>
-              <VolumeIcon volume={volume} muted={muted || !media.hasAudio} />
+            <IconButton label={muted ? "Activar sonido" : "Silenciar"} onClick={toggleMute}>
+              <VolumeIcon volume={volume} muted={muted} />
             </IconButton>
           </Tooltip>
-          {media.hasAudio && <Slider value={muted ? 0 : volume} onChange={setVolume} label="Volumen" width={88} />}
+          <Slider value={muted ? 0 : volume} onChange={setVolume} label="Volumen" width={88} />
         </div>
       </div>
     </div>

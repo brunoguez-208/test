@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion, useAnimate } from "motion/react";
-import { useSnip } from "../store/snip";
 import { frameToTimecode, parseTimecode, secondsToFrame } from "../lib/timecode";
 
 interface TimecodeInputProps {
@@ -23,7 +22,6 @@ export function TimecodeInput({ label, value, fps, onCommit, testId, inclusiveEn
   const [editing, setEditing] = useState(false);
   const [scope, animate] = useAnimate();
   const ref = useRef<HTMLInputElement>(null);
-  const exportRunning = useSnip((s) => s.exportState.status === "running");
 
   useEffect(() => {
     if (!editing) setText(display);
@@ -69,7 +67,6 @@ export function TimecodeInput({ label, value, fps, onCommit, testId, inclusiveEn
       <input
         ref={ref}
         value={text}
-        disabled={exportRunning}
         spellCheck={false}
         inputMode="numeric"
         aria-label={label}

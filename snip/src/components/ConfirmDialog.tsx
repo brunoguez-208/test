@@ -1,32 +1,23 @@
-import { useSnip } from "../store/snip";
+import { useEditor } from "../store/editor";
 import { Dialog } from "./ui/Dialog";
 
-/** Confirmación para agrandar el video o subir los fps (solo duplica cuadros). */
+/** Diálogo de confirmación genérico (agrandar, subir fps, cerrar con cambios, descartar). */
 export function ConfirmDialog() {
-  const c = useSnip((s) => s.confirmation);
-  const resolve = useSnip((s) => s.resolveConfirmation);
-  const upscale = c?.kind === "upscale";
+  const c = useEditor((s) => s.confirm);
   return (
     <Dialog
       open={!!c}
-      title={upscale ? "¿Agrandar el video?" : "¿Subir los fps?"}
-      primary={upscale ? "Agrandar igual" : "Subir igual"}
-      onPrimary={() => resolve(true)}
-      onClose={() => resolve(false)}
+      title={c?.title ?? ""}
+      primary={c?.primary ?? "Aceptar"}
+      secondary={c?.secondary ?? "Cancelar"}
+      tertiary={c?.tertiary}
+      danger={c?.danger}
+      onPrimary={() => c?.resolve("primary")}
+      onSecondary={c?.secondary ? () => c.resolve("secondary") : undefined}
+      onTertiary={c?.tertiary ? () => c.resolve("tertiary") : undefined}
+      onClose={() => c?.resolve("cancel")}
     >
-      {c && (
-        <>
-          <p>
-            <span className="tabular text-[var(--text-primary)]">{c.from}</span> →{" "}
-            <span className="tabular text-[var(--text-primary)]">{c.to}</span>
-          </p>
-          <p className="mt-2">
-            {upscale
-              ? "Agrandar no agrega detalle: el video se ve igual de nítido, pero el archivo pesa más."
-              : "El video original tiene menos cuadros por segundo. Subirlos solo duplica cuadros: no se ve más fluido y el archivo pesa más."}
-          </p>
-        </>
-      )}
+      {c && <p>{c.body}</p>}
     </Dialog>
   );
 }

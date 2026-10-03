@@ -1,15 +1,15 @@
 import { useEffect } from "react";
 import { api, events, hasTauri, onWindowFocus } from "../lib/platform";
 import { applyMaterial, applyPalette, systemPrefersDark } from "../lib/theme";
-import { useSnip } from "../store/snip";
-import { openFile } from "../store/controller";
+import { useEditor } from "../store/editor";
+import { openPaths, refreshWelcome, startQueueListener, startSync } from "../store/controller";
 
-/** Tema/acento de Windows, foco de la ventana, archivo de arranque y "Abrir con" en caliente. */
+/** Tema/acento de Windows, foco, archivo de arranque, "Abrir con" en caliente, cola y autoguardado. */
 export function useAppShell() {
   useEffect(() => {
     const offs: Promise<() => void>[] = [];
+    const stopSync = startSync();
 
-    // Tema y material. Sin Rust (navegador), seguimos prefers-color-scheme.
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const fromMedia = () => (document.documentElement.dataset.theme = systemPrefersDark() ? "dark" : "light");
     if (hasTauri()) {
@@ -30,31 +30,30 @@ export function useAppShell() {
       mq.addEventListener("change", fromMedia);
     }
 
-    // Título atenuado cuando la ventana pierde el foco.
     const setFocused = (f: boolean) => {
       document.documentElement.dataset.focused = String(f);
-      useSnip.setState({ focused: f });
+      useEditor.setState({ focused: f });
     };
     const onFocus = () => setFocused(true);
     const onBlur = () => setFocused(false);
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
-    if (hasTauri()) offs.push(onWindowFocus(setFocused));
-
-    // Otro "Abrir con" mientras Snip ya está abierto (single instance).
-    if (hasTauri()) offs.push(events.onOpenFile((p) => void openFile(p)));
-
-    // Archivo con el que se lanzó la app.
     if (hasTauri()) {
+      offs.push(onWindowFocus(setFocused));
+      // Otro "Abrir con" mientras Snip ya está abierto (single instance): pestaña nueva.
+      offs.push(events.onOpenFile((p) => void openPaths([p])));
       api
         .takeLaunchFile()
         .then((p) => {
-          if (p) void openFile(p);
+          if (p) void openPaths([p]);
         })
         .catch(() => {});
+      void refreshWelcome();
+      void startQueueListener();
     }
 
     return () => {
+      stopSync();
       mq.removeEventListener("change", fromMedia);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
