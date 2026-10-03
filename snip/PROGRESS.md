@@ -171,7 +171,7 @@ Reglas: mismo diseño y animaciones, todo lo existente sigue andando, tests como
 un commit por funcionalidad. Al terminar la tanda A: tests completos + instalador, y seguir con B.
 
 - [x] A1. Grabaciones de NVIDIA (ShadowPlay / Instant Replay) que fallaban con NVENC
-- [ ] A2. Controles de ventana duplicados al maximizar
+- [x] A2. Controles de ventana duplicados al maximizar
 - [ ] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
 - [ ] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
 - [ ] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
@@ -210,3 +210,21 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
   (tonos de 440 Hz y 1 kHz), elegir una sola pista, la etapa pesada y proyectos viejos.
   Unit tests de probe con JSON real de ShadowPlay (`r_frame_rate` 90000/1), Vitest y Playwright
   (`e2e/nvidia.spec.ts`).
+
+### Notas de A2 (controles de ventana duplicados)
+- Causa: para que Mica se vea detrás del contenido, `system.rs` extiende el marco de DWM a toda
+  la ventana (márgenes −1), y tao deja siempre `WS_CAPTION | WS_SYSMENU`. En ese modo DWM dibuja
+  sus propios botones de ventana en el "vidrio", que se veían a través del webview transparente
+  detrás de los de decorum; al maximizar (el marco cambia) quedaban corridos. Además decorum
+  inyectaba sus botones por JS en cada evento de carga de página (inicio y fin).
+- Arreglo: `hide_native_caption_buttons` quita `WS_SYSMENU` (sin él DWM no dibuja botones) y una
+  subclase de la ventana lo vuelve a quitar en cada `WM_STYLECHANGING` (tao reescribe el estilo
+  al maximizar/restaurar). `WS_THICKFRAME`, `WS_CAPTION`, min/max se mantienen: Snap con
+  Win+flechas y arrastrando a los bordes, animaciones y sombra siguen iguales. Al maximizar,
+  tao ya ajusta el área cliente al área de trabajo del monitor (nada queda cortado).
+- Los botones los dibuja React (`WindowControls`): un solo juego, mismos glifos de Segoe Fluent
+  Icons, mismos ids/estilos de siempre; el de maximizar cambia a "restaurar" y, igual que antes,
+  al quedarse encima abre Snap Layouts (se usa solo el comando `show_snap_overlay` de decorum).
+- Test de Playwright: un solo juego, alineado al borde derecho y sin tapar la barra en normal,
+  maximizado y restaurado, y sin duplicarse al recargar. La verificación visual real (Windows 11
+  con Mica, maximizar/restaurar/Snap) queda en el checklist manual.

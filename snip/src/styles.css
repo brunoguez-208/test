@@ -270,7 +270,23 @@ body {
   pointer-events: auto;
 }
 
-/* Botones nativos que inyecta decorum (tienen estilos inline: hace falta !important). */
+/* Botones de ventana (WindowControls). Conservan los ids de decorum para que
+   el aspecto sea idéntico al de siempre. */
+.window-controls {
+  position: relative;
+  z-index: 1;
+}
+.decorum-tb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  padding: 0;
+  outline: none;
+  cursor: default;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
 .decorum-tb-btn,
 #decorum-tb-minimize,
 #decorum-tb-maximize,

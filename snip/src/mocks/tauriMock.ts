@@ -101,6 +101,7 @@ export interface MockState {
   jobs: ExportJob[];
   nextExportError: AppError | null;
   dialogOpenPaths: string[] | null;
+  maximized: boolean;
   dialogSavePath: string | null;
   autosaves: Record<string, { project: Project; file: string | null }>;
   snips: Record<string, Project>;
@@ -174,6 +175,7 @@ export function installTauriMock() {
     jobs: [],
     nextExportError: null,
     dialogOpenPaths: ["C:\\Users\\Bruno\\Videos\\Clip de prueba.mp4"],
+    maximized: false,
     dialogSavePath: null,
     autosaves: {},
     snips: {},
@@ -494,6 +496,12 @@ export function installTauriMock() {
           return (a.paths as string[]).map((p) => !/movido/i.test(p));
         case "reveal_in_folder":
         case "open_in_default_app":
+          return null;
+        case "plugin:window|is_maximized":
+          return state.maximized;
+        case "plugin:window|toggle_maximize":
+          state.maximized = !state.maximized;
+          setTimeout(() => void emit("tauri://resize", { width: 1280, height: 820 }), 0);
           return null;
         case "reveal_log":
           return "C:\\Users\\demo\\AppData\\Roaming\\com.snip.app\\logs\\snip.log";

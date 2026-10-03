@@ -10,7 +10,6 @@ use state::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
-use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_plugin_notification::NotificationExt;
 
 /// Lleva al frente la ventana principal (por ejemplo, cuando se abre otro archivo).
@@ -76,8 +75,11 @@ pub fn run() {
             let st = AppState::new(state::resolve_tools(), cache_dir, data_dir, launch);
 
             let window = app.get_webview_window("main").expect("ventana principal");
-            window.create_overlay_titlebar()?;
+            // Los botones de ventana los dibuja el frontend (un solo juego,
+            // alineado en normal, maximizado, pantalla completa y Snap). De
+            // decorum solo se usa el comando que abre Snap Layouts.
             let material = system::apply_material(&window);
+            system::hide_native_caption_buttons(&window);
             if let Ok(mut m) = st.material.lock() {
                 *m = material.to_string();
             }

@@ -5,6 +5,7 @@ import { api } from "./lib/platform";
 import { useAppShell } from "./hooks/useAppShell";
 import { useDragDrop } from "./hooks/useDragDrop";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { WindowControls } from "./components/WindowControls";
 import { Titlebar } from "./components/Titlebar";
 import { Welcome } from "./components/Welcome";
 import { Editor } from "./components/editor/Editor";
@@ -49,6 +50,7 @@ export function App() {
   return (
     <MotionConfig reducedMotion="user">
       <Titlebar />
+      <WindowControls />
       <motion.div
         className="workspace h-full"
         initial={{ opacity: 0, scale: 0.985 }}
