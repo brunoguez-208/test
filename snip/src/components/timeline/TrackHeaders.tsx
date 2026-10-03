@@ -2,14 +2,25 @@
 // por pista. Audio: silenciar y solo (y volumen en la pestaña Audio).
 
 import type { ReactNode } from "react";
-import { ClosedCaption16Regular, MusicNote216Regular, Speaker216Regular, SpeakerMute16Regular, TextT16Regular, VideoClip16Regular } from "@fluentui/react-icons";
+import {
+  ClosedCaption16Regular,
+  Eye16Regular,
+  EyeOff16Regular,
+  LockClosed16Regular,
+  LockOpen16Regular,
+  MusicNote216Regular,
+  Speaker216Regular,
+  SpeakerMute16Regular,
+  TextT16Regular,
+  VideoClip16Regular,
+} from "@fluentui/react-icons";
 import type { Project } from "../../project/model";
 import { audioTrackName, setTrackState, trackState, type TrackRef } from "../../project/audioOps";
 import { edit, useEditor } from "../../store/editor";
 import { Tooltip } from "../ui/Tooltip";
 import { AUDIO_H, MUSIC_H, OVERLAY_H, RULER_H, VIDEO_H } from "./geometry";
 
-function Toggle({ on, label, onClick, children, testId, tone }: { on: boolean; label: string; onClick: () => void; children: ReactNode; testId: string; tone?: "solo" | "mute" }) {
+function Toggle({ on, label, onClick, children, testId, tone }: { on: boolean; label: string; onClick: () => void; children: ReactNode; testId: string; tone?: "solo" | "mute" | "plain" }) {
   return (
     <Tooltip content={label} placement="top">
       <button
@@ -36,6 +47,26 @@ function Row({ height, icon, title, children, testId }: { height: number; icon: 
   );
 }
 
+/** Ocultar (ojo) una pista visual. */
+function EyeButton({ project, r, id }: { project: Project; r: TrackRef; id: string }) {
+  const st = trackState(project, r);
+  return (
+    <Toggle on={!!st.hidden} label={st.hidden ? "Mostrar pista" : "Ocultar pista"} onClick={() => edit((p) => setTrackState(p, r, { hidden: !st.hidden }))} testId={`track-eye-${id}`} tone="plain">
+      {st.hidden ? <EyeOff16Regular /> : <Eye16Regular />}
+    </Toggle>
+  );
+}
+
+/** Bloquear una pista (no se puede mover, recortar, dividir ni borrar lo que tiene). */
+function LockButton({ project, r, id }: { project: Project; r: TrackRef; id: string }) {
+  const st = trackState(project, r);
+  return (
+    <Toggle on={!!st.locked} label={st.locked ? "Desbloquear pista" : "Bloquear pista"} onClick={() => edit((p) => setTrackState(p, r, { locked: !st.locked }))} testId={`track-lock-${id}`} tone="plain">
+      {st.locked ? <LockClosed16Regular /> : <LockOpen16Regular />}
+    </Toggle>
+  );
+}
+
 /** Silenciar / solo de una pista de audio. */
 function AudioButtons({ project, r, id }: { project: Project; r: TrackRef; id: string }) {
   const st = trackState(project, r);
@@ -58,16 +89,29 @@ export function TrackHeaders({ project, lanes, hasCues, rows }: { project: Proje
     <>
       <div style={{ height: RULER_H }} />
       {Array.from({ length: lanes }, (_, i) => (
-        <Row key={`o${i}`} height={OVERLAY_H} icon={i === 0 ? <TextT16Regular /> : <span className="w-4" />} title={`Capa ${i + 1}`} testId={`track-header-overlay-${i}`} />
+        <Row key={`o${i}`} height={OVERLAY_H} icon={i === 0 ? <TextT16Regular /> : <span className="w-4" />} title={`Capa ${i + 1}`} testId={`track-header-overlay-${i}`}>
+          <EyeButton project={project} r={{ kind: "overlay", index: i }} id={`overlay-${i}`} />
+          <LockButton project={project} r={{ kind: "overlay", index: i }} id={`overlay-${i}`} />
+        </Row>
       ))}
-      {hasCues && <Row height={OVERLAY_H} icon={<ClosedCaption16Regular />} title="Subtítulos" testId="track-header-subtitles" />}
-      <Row height={VIDEO_H} icon={<VideoClip16Regular />} title="Video" testId="track-header-video" />
+      {hasCues && (
+        <Row height={OVERLAY_H} icon={<ClosedCaption16Regular />} title="Subtítulos" testId="track-header-subtitles">
+          <EyeButton project={project} r={{ kind: "subtitles" }} id="subtitles" />
+          <LockButton project={project} r={{ kind: "subtitles" }} id="subtitles" />
+        </Row>
+      )}
+      <Row height={VIDEO_H} icon={<VideoClip16Regular />} title="Video" testId="track-header-video">
+        <EyeButton project={project} r={{ kind: "video" }} id="video" />
+        <LockButton project={project} r={{ kind: "video" }} id="video" />
+      </Row>
       <Row height={AUDIO_H} icon={<Speaker216Regular />} title="Audio del video" testId="track-header-video-audio">
         <AudioButtons project={project} r={{ kind: "videoAudio" }} id="video-audio" />
+        <LockButton project={project} r={{ kind: "videoAudio" }} id="video-audio" />
       </Row>
       {Array.from({ length: rows }, (_, i) => (
         <Row key={`a${i}`} height={MUSIC_H} icon={<MusicNote216Regular />} title={audioTrackName(project, i)} testId={`track-header-audio-${i}`}>
           <AudioButtons project={project} r={{ kind: "audio", index: i }} id={`audio-${i}`} />
+          <LockButton project={project} r={{ kind: "audio", index: i }} id={`audio-${i}`} />
         </Row>
       ))}
     </>

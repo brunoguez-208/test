@@ -1161,4 +1161,23 @@ mod tests {
         let c = compile(&p, &opts(&st, &none)).unwrap();
         assert!(c.filter.contains("[0:a:1]atrim=") && !c.filter.contains("amix=inputs=2:duration=longest"), "{}", c.filter);
     }
+
+    #[test]
+    fn hidden_tracks_are_left_out_of_the_render() {
+        let mut p = base();
+        let st = p.export.clone();
+        let none = HashMap::new();
+        let c = compile(&p, &opts(&st, &none)).unwrap();
+        assert!(!c.filter.contains("drawbox"));
+        // Ojo en la pista de video: negro (el audio sigue).
+        p.tracks.video.hidden = true;
+        let c = compile(&p, &opts(&st, &none)).unwrap();
+        assert!(c.filter.contains("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill"), "{}", c.filter);
+        assert!(c.filter.contains("[0:a:0]atrim="));
+        // Audio del video silenciado: silencio en vez del clip.
+        p.tracks.video_audio.muted = true;
+        let c = compile(&p, &opts(&st, &none)).unwrap();
+        assert!(!c.filter.contains("[0:a:0]"), "{}", c.filter);
+        assert!(c.filter.contains("anullsrc"));
+    }
 }

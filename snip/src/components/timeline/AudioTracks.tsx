@@ -1,3 +1,4 @@
+import { isLocked } from "../../project/tracks";
 import { openContextMenu } from "../ui/ContextMenu";
 import { itemMenu } from "../../store/clipboard";
 import { motion } from "motion/react";
@@ -84,7 +85,7 @@ function ClipWave({ clip, media, start, duration, geo }: { clip: Clip; media: Me
 export function MainAudioTrack({ project, geo }: { project: Project; geo: Geo }) {
   const spans = useMemo(() => layout(project.clips), [project.clips]);
   return (
-    <div className="tl-track relative" style={{ height: AUDIO_H }} data-testid="audio-track" data-drop="audio" data-row-h={AUDIO_H} data-row-base={-1}>
+    <div className="tl-track relative" style={{ height: AUDIO_H }} data-testid="audio-track" data-muted={!!project.tracks?.videoAudio?.muted} data-locked={!!project.tracks?.videoAudio?.locked} data-drop="audio" data-row-h={AUDIO_H} data-row-base={-1}>
       {project.clips.map((c, i) => (
         <ClipWave key={c.id} clip={c} media={project.media.find((m) => m.id === c.mediaId)} start={spans[i].start} duration={spans[i].duration} geo={geo} />
       ))}
@@ -167,6 +168,15 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
     const y0 = e.clientY;
     const origin = project;
     const m0 = mu;
+    if (isLocked(origin, m0.id)) {
+      const up = () => {
+        window.removeEventListener("pointerup", up);
+        setSelection([m0.id]);
+        useEditor.setState({ inspectorTab: "audio", inspectorOpen: true });
+      };
+      window.addEventListener("pointerup", up);
+      return;
+    }
     const rows = musicRows(origin);
     const mates = (groupOf(origin, m0.id) ?? []).filter((id) => id !== m0.id);
     let started = false;
@@ -211,7 +221,7 @@ function MusicView({ mu, media, geo, selected, project, snapOn }: { mu: MusicCli
 
   return (
     <motion.div
-      className={`tl-music absolute top-[3px] ${selected ? "is-selected" : ""}`}
+      className={`tl-music absolute top-[3px] ${selected ? "is-selected" : ""} ${project.tracks?.audio?.[mu.track ?? 0]?.locked ? "is-locked" : ""} ${project.tracks?.audio?.[mu.track ?? 0]?.muted || mu.muted ? "is-muted" : ""}`}
       style={{ left: x, width: w, height: MUSIC_H - 6, top: (mu.track ?? 0) * MUSIC_H + 3 }}
       onPointerDown={startDrag("move")}
       onDoubleClick={(e) => {

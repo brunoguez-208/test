@@ -31,7 +31,9 @@ export type ShortcutAction =
   | { type: "duplicate" }
   | { type: "pasteEffects" }
   | { type: "group" }
-  | { type: "ungroup" };
+  | { type: "ungroup" }
+  | { type: "trimStart" }
+  | { type: "trimEnd" };
 
 export interface KeyLike {
   key: string;
@@ -97,6 +99,8 @@ export function shortcutFor(e: KeyLike, target?: TargetLike | null): ShortcutAct
   if (key === "i") return { type: "markIn" };
   if (key === "o") return { type: "markOut" };
   if (key === "s") return { type: "split" };
+  if (key === "q") return { type: "trimStart" };
+  if (key === "w") return { type: "trimEnd" };
   if (key === "m") return e.shiftKey ? { type: "nextMarker" } : { type: "marker" };
   if (key === "ArrowLeft") return e.shiftKey ? { type: "stepSeconds", seconds: -1 } : { type: "stepFrames", frames: -1 };
   if (key === "ArrowRight") return e.shiftKey ? { type: "stepSeconds", seconds: 1 } : { type: "stepFrames", frames: 1 };
@@ -130,7 +134,8 @@ export const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
   {
     title: "Edición",
     items: [
-      ["S", "Dividir en el playhead"],
+      ["S", "Dividir en el playhead (o el audio elegido)"],
+      ["Q / W", "Recortar el inicio / el final del clip hasta el playhead"],
       ["Supr", "Borrar la selección o el rango I/O"],
       ["I / O", "Marcar inicio / fin del rango"],
       ["M", "Agregar marcador"],
@@ -149,6 +154,15 @@ export const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
       ["Ctrl + Alt + V", "Pegar solo los efectos"],
       ["Ctrl + G", "Agrupar"],
       ["Ctrl + Shift + G", "Desagrupar"],
+    ],
+  },
+  {
+    title: "Pistas y audio",
+    items: [
+      ["Ojo / M / S / candado", "Ocultar, silenciar, solo y bloquear (cabecera de cada pista)"],
+      ["Doble clic en un audio", "Agregar un punto de volumen (doble clic en el punto lo borra)"],
+      ["Clic derecho en un clip", "Separar audio, Mejorar voz, copiar, agrupar…"],
+      ["Arrastrar del Explorador", "Soltar sobre una pista: va a esa pista, en ese tiempo"],
     ],
   },
   {

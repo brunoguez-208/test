@@ -23,6 +23,7 @@ import { TEXT_TEMPLATES } from "../project/templates";
 import { addMusic, deleteClips, insertMedia, makeId, EditError } from "../project/ops";
 import { layout, totalDuration } from "../project/timeline";
 import { DEFAULT_VIDEO, type MediaRef, type Project } from "../project/model";
+import { unlockedOnly } from "../project/tracks";
 import type { MenuEntry } from "../components/ui/ContextMenu";
 import { activeProject, activeTab, edit, pushToast, setSelection, useEditor, type DropTarget } from "./editor";
 import { ensureWaveform, notifyEditError, notifyError } from "./controller";
@@ -74,9 +75,9 @@ export function copy(): boolean {
 
 export function cut(): boolean {
   const p = activeProject();
-  const sel = selection();
-  if (!p || !sel.length) return false;
+  if (!p || !selection().length) return false;
   try {
+    const sel = unlockedOnly(p, selection());
     let data: ClipboardData | null = null;
     edit((q) => {
       const [r, d] = cutSelection(q, sel, deleteClips);
@@ -396,7 +397,8 @@ export function itemMenu(id: string, extra: MenuEntry[] = []): MenuEntry[] {
       hint: "Supr",
       run: () => {
         try {
-          edit((q) => deleteClips(q, activeTab()?.selection ?? sel));
+          const ids = unlockedOnly(p, activeTab()?.selection ?? sel);
+          edit((q) => deleteClips(q, ids));
           setSelection([]);
         } catch (e) {
           notifyEditError(e);

@@ -15,6 +15,8 @@ import { addMarker, adjacentMarker, deleteClips, deleteRange, splitAt } from "..
 import { totalDuration } from "../project/timeline";
 import { zoomTimeline } from "../components/timeline/zoom";
 import { audioUnder, splitMusicAt } from "../project/audioOps";
+import { assertMainUnlocked, unlockedOnly } from "../project/tracks";
+import { trimToPlayhead } from "../project/trimOps";
 import { copy, cut, duplicateSelection, groupSelection, pasteEffectsToSelection, ungroupSelection } from "../store/clipboard";
 
 let shuttleRate = 0;
@@ -37,7 +39,7 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
   const tab = activeTab(st);
   const p = activeProject(st);
   if (st.phase !== "editor" || !tab || !p) return false;
-  if (repeat && ["togglePlay", "export", "shuttle", "split", "marker", "save", "closeTab", "delete", "copy", "cut", "duplicate", "pasteEffects", "group", "ungroup"].includes(action.type)) return true;
+  if (repeat && ["togglePlay", "export", "shuttle", "split", "trimStart", "trimEnd", "marker", "save", "closeTab", "delete", "copy", "cut", "duplicate", "pasteEffects", "group", "ungroup"].includes(action.type)) return true;
   // Recorte / zoom sobre el preview: Esc sale; deshacer descarta el recorte;
   // cualquier otra edición primero lo confirma.
   if (st.imageEdit) {
@@ -56,6 +58,21 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
   // Con texto seleccionado en la página (detalles de un error), Ctrl+C copia el texto.
   if (action.type === "copy" && (window.getSelection()?.toString() ?? "") !== "") return false;
   switch (action.type) {
+    case "trimStart":
+    case "trimEnd":
+      try {
+        let to = t;
+        edit((q) => {
+          const [r, next] = trimToPlayhead(q, t, action.type === "trimStart" ? "start" : "end", tab.selection);
+          to = next;
+          return r;
+        });
+        pl.pause();
+        pl.seek(to);
+      } catch (e) {
+        notifyEditError(e);
+      }
+      return true;
     case "copy":
       return copy();
     case "cut":
@@ -102,9 +119,12 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
     case "split":
       try {
         // Con audio elegido bajo el playhead, S divide ese audio; si no, el clip de video.
-        const audio = audioUnder(p, tab.selection, t);
+        const audio = audioUnder(p, unlockedOnly(p, tab.selection), t);
         if (audio.length) edit((q) => audio.reduce((r, id) => splitMusicAt(r, id, t), q));
-        else edit((q) => splitAt(q, t));
+        else {
+          assertMainUnlocked(p);
+          edit((q) => splitAt(q, t));
+        }
       } catch (e) {
         notifyEditError(e);
       }
@@ -112,9 +132,11 @@ export function runShortcut(action: ShortcutAction, repeat = false): boolean {
     case "delete":
       try {
         if (tab.selection.length) {
-          edit((q) => deleteClips(q, tab.selection));
+          const ids = unlockedOnly(p, tab.selection);
+          edit((q) => deleteClips(q, ids));
           setSelection([]);
         } else if (tab.markIn !== null || tab.markOut !== null) {
+          assertMainUnlocked(p);
           edit((q) => deleteRange(q, tab.markIn ?? 0, tab.markOut ?? totalDuration(q)));
           setMarks(null, null);
         }

@@ -1,6 +1,7 @@
 // Pistas de superposiciones (textos, logos…) y de subtítulos: cada capa se
 // mueve en el tiempo y entre filas, y se recorta por los bordes.
 
+import { isLocked } from "../../project/tracks";
 import { openContextMenu } from "../ui/ContextMenu";
 import { itemMenu } from "../../store/clipboard";
 import { motion, useReducedMotion } from "motion/react";
@@ -37,6 +38,15 @@ function itemDrag(
 ) {
   if (e.button !== 0) return;
   e.stopPropagation();
+  // Pista bloqueada: un click elige, pero no se mueve ni se recorta.
+  if (ignore.some((id) => isLocked(project, id))) {
+    const up = () => {
+      window.removeEventListener("pointerup", up);
+      onClick();
+    };
+    window.addEventListener("pointerup", up);
+    return;
+  }
   const x0 = e.clientX;
   const y0 = e.clientY;
   let started = false;
@@ -117,7 +127,7 @@ function OverlayItem({ project, o, geo, selected, snapOn }: { project: Project; 
     <motion.div
       layout={reduce ? false : "position"}
       transition={{ type: "spring", stiffness: 520, damping: 42 }}
-      className={`tl-overlay tl-overlay-${o.type} absolute ${selected ? "is-selected" : ""}`}
+      className={`tl-overlay tl-overlay-${o.type} absolute ${selected ? "is-selected" : ""} ${project.tracks?.overlays?.[o.lane]?.locked ? "is-locked" : ""} ${project.tracks?.overlays?.[o.lane]?.hidden ? "is-hidden" : ""}`}
       style={{ left: x, width: w, top: o.lane * OVERLAY_H + 2, height: OVERLAY_H - 4 }}
       onPointerDown={down("move")}
       onContextMenu={(e) => openContextMenu(e, itemMenu(o.id))}
@@ -177,7 +187,7 @@ function CueItem({ project, c, geo, selected, snapOn }: { project: Project; c: C
   };
   return (
     <div
-      className={`tl-overlay tl-cue absolute ${selected ? "is-selected" : ""}`}
+      className={`tl-overlay tl-cue absolute ${selected ? "is-selected" : ""} ${project.tracks?.subtitles?.locked ? "is-locked" : ""} ${project.tracks?.subtitles?.hidden ? "is-hidden" : ""}`}
       style={{ left: x, width: w, top: 2, height: OVERLAY_H - 4 }}
       onPointerDown={down("move")}
       onContextMenu={(e) => openContextMenu(e, itemMenu(c.id))}

@@ -217,7 +217,14 @@ pub fn apply_overlays(
     seq_dur: f64,
 ) -> Result<String, AppError> {
     let mut cur = video.to_string();
-    let mut ordered: Vec<&Overlay> = p.overlays.iter().collect();
+    // Pista de video oculta (ojo): negro, con las capas encima como siempre.
+    if p.tracks.video.hidden {
+        let out = g.label("hid");
+        g.add(&[&cur], "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill", &out);
+        cur = out;
+    }
+    // Filas de capas ocultas: no se dibujan (ni suena su PiP).
+    let mut ordered: Vec<&Overlay> = p.overlays.iter().filter(|o| !p.tracks.overlay(o.lane).hidden).collect();
     ordered.sort_by(|a, b| a.lane.cmp(&b.lane).then(a.start.total_cmp(&b.start)));
     let missing = || AppError::with_message(ErrorKind::BadProject, "Faltan las capas de desenfoque o PiP: volvé a exportar.");
 
@@ -313,7 +320,7 @@ pub fn pip_audio(g: &mut Graph, inputs: &mut Inputs, p: &Project, base: f64, seq
     let mut out = vec![];
     for o in &p.overlays {
         let OverlayContent::Video(v) = &o.content else { continue };
-        if v.volume <= 1e-6 {
+        if v.volume <= 1e-6 || p.tracks.overlay(o.lane).hidden {
             continue;
         }
         let Some((s0, s1)) = visible_part(o.start, o.start + o.duration, base, seq_dur) else { continue };

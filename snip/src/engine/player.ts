@@ -344,7 +344,7 @@ export class Player {
     } else add(frame.a, 1, playing);
     // Picture-in-picture: su propio <video> (con su volumen).
     for (const o of p.overlays) {
-      if (o.type !== "video") continue;
+      if (o.type !== "video" || p.tracks?.overlays?.[o.lane]?.hidden) continue;
       const near = this.time >= o.start - PRELOAD_SECS && this.time < o.start + o.duration;
       if (!near) continue;
       const m = p.media.find((x) => x.id === o.mediaId);
@@ -615,7 +615,7 @@ export class Player {
     const H = p.canvas.height;
     const sx = w / W;
     const sy = h / H;
-    const ordered = [...p.overlays].sort((a, b) => a.lane - b.lane || a.start - b.start);
+    const ordered = p.overlays.filter((o) => !p.tracks?.overlays?.[o.lane]?.hidden).sort((a, b) => a.lane - b.lane || a.start - b.start);
     for (const o of ordered) {
       if (o.type !== "blur" || !isActive(o, this.time)) continue;
       const [x0, y0, x1, y1] = zonePixels(rectAt(o, this.time - o.start), W, H);
@@ -663,13 +663,15 @@ export class Player {
     if (!p) return null;
     const f = activeAt(this.spans, this.time);
     if (!f) return { a: null, b: null, transition: null, fade: 1, layers: [] };
-    const a = this.clipDraw(f.a, p);
-    const b = f.b !== null ? this.clipDraw(f.b, p) : null;
+    // Pista de video oculta (ojo): negro, con las capas encima.
+    const hidden = !!p.tracks?.video?.hidden;
+    const a = hidden ? null : this.clipDraw(f.a, p);
+    const b = !hidden && f.b !== null ? this.clipDraw(f.b, p) : null;
     const kind = f.b !== null ? p.clips[f.b].transition?.kind ?? "fade" : null;
     return {
       a,
       b,
-      transition: f.b !== null && kind ? { kind, progress: f.progress } : null,
+      transition: !hidden && f.b !== null && kind ? { kind, progress: f.progress } : null,
       fade: this.globalFade(),
       ...this.zoneDraws(this.renderW, this.renderH),
       layers: this.decorLayers(this.renderW, this.renderH),

@@ -50,7 +50,7 @@ export function wordIndexAt(c: Cue, t: number): number {
 /** Capas visibles en orden de dibujo: por fila (lane) y después por inicio. */
 function visibleOverlays(p: Project, t: number): Overlay[] {
   return p.overlays
-    .filter((o) => (o.type === "text" || o.type === "image") && isActive(o, t))
+    .filter((o) => (o.type === "text" || o.type === "image") && isActive(o, t) && !p.tracks?.overlays?.[o.lane]?.hidden)
     .sort((a, b) => a.lane - b.lane || a.start - b.start);
 }
 
@@ -74,7 +74,7 @@ export function decorKey(p: Project, t: number, fps = canvasFps(p.canvas)): stri
     const ph = o.type === "text" || o.type === "image" ? animPhase(o as TextOverlay | ImageOverlay, t) : null;
     parts.push(ph ? `${o.id}:${ph.kind}${Math.round((t - o.start) * fps)}` : o.id);
   }
-  const c = cueAt(p.subtitles.cues, t);
+  const c = p.tracks?.subtitles?.hidden ? null : cueAt(p.subtitles.cues, t);
   if (c) parts.push(p.subtitles.wordByWord && c.words.length ? `${c.id}:w${wordIndexAt(c, t)}` : c.id);
   return parts.join("|");
 }
@@ -434,7 +434,7 @@ export function drawDecor(ctx: Ctx, p: Project, t: number, W: number, H: number,
     if (o.type === "text") drawTextOverlay(ctx, o as TextOverlay, t, W, H);
     else if (o.type === "image") drawImageOverlay(ctx, p, o as ImageOverlay, W, H, images, t);
   }
-  const c = cueAt(p.subtitles.cues, t);
+  const c = p.tracks?.subtitles?.hidden ? null : cueAt(p.subtitles.cues, t);
   if (c) drawSubtitle(ctx, p, c, t, W, H);
 }
 
@@ -445,7 +445,7 @@ const sigCache = new WeakMap<Project, string>();
 export function decorSignature(p: Project): string {
   let s = sigCache.get(p);
   if (s === undefined) {
-    s = JSON.stringify([p.overlays.filter((o) => o.type === "text" || o.type === "image"), p.subtitles, p.canvas.fpsNum, p.canvas.fpsDen]);
+    s = JSON.stringify([p.overlays.filter((o) => o.type === "text" || o.type === "image"), p.subtitles, p.canvas.fpsNum, p.canvas.fpsDen, p.tracks?.overlays?.map((t) => !!t?.hidden), !!p.tracks?.subtitles?.hidden]);
     sigCache.set(p, s);
   }
   return s;

@@ -1,3 +1,4 @@
+import { isLocked } from "../../project/tracks";
 import { openContextMenu } from "../ui/ContextMenu";
 import { itemMenu } from "../../store/clipboard";
 import { audioMenu } from "../../store/audio";
@@ -235,6 +236,8 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
       return { kind: "move", id, grab: 0, startIndex: project.clips.findIndex((c) => c.id === id), origin: project };
     },
     move: (st, dx) => {
+      // Pista bloqueada: se puede elegir, no mover.
+      if (isLocked(st.origin, st.id)) return;
       if (!st.moved) {
         st.moved = true;
         gestureStart();
@@ -269,6 +272,8 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
       className="tl-track relative"
       style={{ height: VIDEO_H }}
       data-testid="video-track"
+      data-locked={!!project.tracks?.video?.locked}
+      data-hidden={!!project.tracks?.video?.hidden}
       data-drop="main"
       onContextMenu={(e) => {
         const el = (e.target as HTMLElement).closest("[data-clip-id]") as HTMLElement | null;
@@ -342,6 +347,7 @@ function makeTrimHandler(edge: "in" | "out", project: Project, geo: Geo, snapOn:
     if (!el) return;
     const id = el.dataset.clipId!;
     const origin = project;
+    if (isLocked(origin, id)) return;
     const i = origin.clips.findIndex((c) => c.id === id);
     const c = origin.clips[i];
     const sp = layout(origin.clips)[i];

@@ -135,7 +135,7 @@ export function snapSourceToFrame(t: number, fps: number): number {
   return Math.round(t * fps) / fps;
 }
 
-function clipIndexAtTime(p: Project, t: number): number {
+export function clipIndexAtTime(p: Project, t: number): number {
   const spans = layout(p.clips);
   for (let i = 0; i < spans.length; i++) {
     if (t >= spans[i].start - 1e-9 && t < spans[i].end - 1e-9) {

@@ -175,7 +175,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
 - [x] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
 - [x] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
-- [ ] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
+- [x] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
 - [ ] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
 - [ ] Cierre: tests completos + instalador de la tanda A
 
@@ -293,3 +293,14 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
   pistas, y "Mejorar voz" baja el zumbido de 60 Hz bastante más que la voz.
 - El área de pistas usa `overflow: clip`: antes un `scrollIntoView` (foco por teclado o un
   elemento más ancho que la vista) podía correr todo el timeline y dejar la pista de video fuera.
+
+### Notas de A6 (pistas, Q/W, atajos)
+- Cabecera de cada pista (columna izquierda, ahora de 96 px): ojo en video, capas y
+  subtítulos; silenciar y solo en el audio del video y en cada pista de audio; candado en todas.
+- Ojo: la pista no se ve ni en el preview ni en la exportación (video → negro con las capas
+  encima; capas y subtítulos no se rasterizan; el PiP oculto tampoco suena). Silenciar/solo: ver A5.
+- Candado: lo de esa pista se puede elegir pero no mover, recortar, dividir, cortar ni borrar
+  (aviso "Esa pista está bloqueada"). Se ve con un rayado suave.
+- Q / W: recortan el inicio / final del clip bajo el playhead hasta el playhead (con ripple en
+  la pista principal; si hay audio, capas o subtítulos elegidos bajo el playhead, recortan esos).
+- Panel `?`: secciones nuevas "Portapapeles" y "Pistas y audio", y Q / W en Edición.
