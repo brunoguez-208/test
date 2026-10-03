@@ -1,5 +1,6 @@
 import { dropTargetAt, setDropGeo } from "./dropTarget";
 import { MEDIA_MIME } from "../library/Library";
+import { RANGE_MIME } from "../library/SourceViewer";
 import { placeFromLibrary } from "../../store/library";
 import { TrackHeaders } from "./TrackHeaders";
 import { AnimatePresence, motion, useMotionValue } from "motion/react";
@@ -371,7 +372,10 @@ export function Timeline({ project }: { project: Project }) {
             e.preventDefault();
             const t = dropTargetAt(e.clientX, e.clientY);
             useEditor.setState({ dropTarget: null });
-            placeFromLibrary(id, t?.time ?? useEditor.getState().time, t);
+            // Desde el visor de origen viene solo un tramo (entrada / salida).
+            const raw = e.dataTransfer.getData(RANGE_MIME);
+            const range = raw ? (JSON.parse(raw) as [number, number]) : null;
+            placeFromLibrary(id, t?.time ?? useEditor.getState().time, t, range);
           }}
           data-testid="timeline-area"
         >

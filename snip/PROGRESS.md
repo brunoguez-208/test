@@ -331,7 +331,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 
 ## Actualización 2.1 — tanda B — checklist
 - [x] B1. Biblioteca de medios
-- [ ] B2. Visor de origen
+- [x] B2. Visor de origen
 - [ ] B3. Rampas de velocidad
 - [ ] B4. Chroma key
 - [ ] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
@@ -349,3 +349,11 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
   Ctrl+V con el puntero/foco en el panel. Un medio que falta muestra "Buscar archivo".
 - Arrastrar una tarjeta a cualquier pista: guía en la pista y el tiempo, y se ubica con la misma
   lógica que el drop del Explorador (`project/library.ts`, `placeMedia`).
+
+### Notas de B2 (visor de origen)
+- Doble clic en la biblioteca abre el medio en su propio visor (sobre el preview; el timeline
+  queda a la vista): mini timeline con miniaturas, Espacio, ←/→ (Shift = 1 s), I / O para
+  marcar el fragmento (en cuadros exactos del original), Enter = "Insertar en el playhead",
+  Esc cierra. Mientras está abierto, esas teclas no llegan al editor.
+- "Arrastrá el fragmento a una pista": lleva solo ese tramo (video a la pista principal, PiP
+  sobre las capas, audio a la pista de audio).
