@@ -141,7 +141,7 @@ export function OverlayTrack({ project, geo, snapOn }: { project: Project; geo: 
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   const lanes = overlayLanes(project);
   return (
-    <div className="tl-track tl-overlay-track relative" style={{ height: lanes * OVERLAY_H }} data-testid="overlay-track">
+    <div className="tl-track tl-overlay-track relative" style={{ height: lanes * OVERLAY_H }} data-testid="overlay-track" data-drop="overlay" data-row-h={OVERLAY_H} data-row-base={0}>
       {project.overlays.map((o) => (
         <OverlayItem key={o.id} project={project} o={o} geo={geo} selected={selection.includes(o.id)} snapOn={snapOn} />
       ))}

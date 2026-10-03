@@ -552,6 +552,16 @@ pub struct ImageLayer {
     pub radius: f64,
     #[serde(default)]
     pub shadow: bool,
+    /// Rotación en grados (sentido horario).
+    #[serde(default)]
+    pub rotation: f64,
+    #[serde(default)]
+    pub anim_in: Option<TextAnim>,
+    #[serde(default)]
+    pub anim_out: Option<TextAnim>,
+    /// Marca de agua: dura todo el video (se ajusta sola si cambia el largo).
+    #[serde(default)]
+    pub watermark: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

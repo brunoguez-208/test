@@ -55,7 +55,7 @@ function visibleOverlays(p: Project, t: number): Overlay[] {
 }
 
 /** Progreso de la animación de entrada / salida (null = sin animar en t). */
-function animPhase(o: TextOverlay, t: number): { kind: "in" | "out"; anim: TextAnim; p: number } | null {
+function animPhase(o: Pick<Overlay, "start" | "duration"> & { animIn?: TextAnim | null; animOut?: TextAnim | null }, t: number): { kind: "in" | "out"; anim: TextAnim; p: number } | null {
   const u = t - o.start;
   const dIn = o.animIn ? Math.min(o.animIn.duration, o.duration / 2) : 0;
   const dOut = o.animOut ? Math.min(o.animOut.duration, o.duration / 2) : 0;
@@ -71,7 +71,7 @@ function animPhase(o: TextOverlay, t: number): { kind: "in" | "out"; anim: TextA
 export function decorKey(p: Project, t: number, fps = canvasFps(p.canvas)): string {
   const parts: string[] = [];
   for (const o of visibleOverlays(p, t)) {
-    const ph = o.type === "text" ? animPhase(o as TextOverlay, t) : null;
+    const ph = o.type === "text" || o.type === "image" ? animPhase(o as TextOverlay | ImageOverlay, t) : null;
     parts.push(ph ? `${o.id}:${ph.kind}${Math.round((t - o.start) * fps)}` : o.id);
   }
   const c = cueAt(p.subtitles.cues, t);
@@ -296,15 +296,40 @@ export function imageRect(o: ImageLayer, m: Pick<MediaRef, "width" | "height">, 
   return { x: o.x * W - w / 2, y: o.y * H - h / 2, w, h };
 }
 
-export function drawImageOverlay(ctx: Ctx, p: Project, o: ImageOverlay, W: number, H: number, images: ImageSource) {
+export function drawImageOverlay(ctx: Ctx, p: Project, o: ImageOverlay, W: number, H: number, images: ImageSource, t?: number) {
   const m = p.media.find((x) => x.id === o.mediaId);
   if (!m) return;
   const img = images.get(m);
   if (!img) return;
   const r = imageRect(o, m, W, H);
   const radius = o.radius * Math.min(r.w, r.h);
+  // Animación de entrada / salida (misma curva que los textos) y rotación.
+  const ph = t === undefined ? null : animPhase(o, t);
+  let alpha = 1;
+  let dy = 0;
+  let scale = 1;
+  if (ph) {
+    const q = ph.p;
+    if (ph.anim.kind === "slide") {
+      alpha = q;
+      dy = (1 - easeOut(q)) * r.h * 0.25 * (ph.kind === "in" ? 1 : -1);
+    } else if (ph.anim.kind === "pop") {
+      alpha = Math.min(1, q * 2);
+      scale = 0.6 + 0.4 * easeOutBack(q);
+    } else alpha = q;
+  }
+  if (alpha <= 0) return;
   ctx.save();
-  ctx.globalAlpha = Math.min(1, Math.max(0, o.opacity));
+  ctx.globalAlpha = Math.min(1, Math.max(0, o.opacity * alpha));
+  const rot = ((o.rotation ?? 0) * Math.PI) / 180;
+  if (rot || scale !== 1 || dy) {
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2 + dy;
+    ctx.translate(cx, cy);
+    if (rot) ctx.rotate(rot);
+    if (scale !== 1) ctx.scale(scale, scale);
+    ctx.translate(-(r.x + r.w / 2), -(r.y + r.h / 2));
+  }
   if (o.shadow) {
     ctx.save();
     ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
@@ -407,7 +432,7 @@ export function drawDecor(ctx: Ctx, p: Project, t: number, W: number, H: number,
   ctx.clearRect(0, 0, W, H);
   for (const o of visibleOverlays(p, t)) {
     if (o.type === "text") drawTextOverlay(ctx, o as TextOverlay, t, W, H);
-    else if (o.type === "image") drawImageOverlay(ctx, p, o as ImageOverlay, W, H, images);
+    else if (o.type === "image") drawImageOverlay(ctx, p, o as ImageOverlay, W, H, images, t);
   }
   const c = cueAt(p.subtitles.cues, t);
   if (c) drawSubtitle(ctx, p, c, t, W, H);

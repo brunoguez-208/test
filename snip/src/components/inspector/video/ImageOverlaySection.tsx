@@ -1,10 +1,12 @@
 import { Delete16Regular, ImageAdd20Regular } from "@fluentui/react-icons";
 import type { ImageLayer, Overlay, Project } from "../../../project/model";
-import { updateOverlay } from "../../../project/overlayOps";
+import { MIN_OVERLAY, setWatermark, updateOverlay } from "../../../project/overlayOps";
+import { totalDuration } from "../../../project/timeline";
+import { AnimField, ANIMS } from "../text/TextLayerEditor";
 import { deleteClips } from "../../../project/ops";
 import { basename } from "../../../lib/files";
 import { activeTab, edit, gestureEnd, gestureStart, setSelection, useEditor } from "../../../store/editor";
-import { addLogoWithDialog } from "../../../store/controller";
+import { addImageWithDialog } from "../../../store/controller";
 import { Button, IconButton } from "../../ui/Button";
 import { RangeSlider } from "../../ui/RangeSlider";
 import { Toggle } from "../../ui/Toggle";
@@ -12,6 +14,8 @@ import { Tooltip } from "../../ui/Tooltip";
 import { Field, Section } from "../Field";
 
 type ImageOverlay = Overlay & ImageLayer;
+
+const IMAGE_ANIMS = ANIMS.filter((a) => a.value !== "typewriter");
 
 const CORNERS: { id: string; label: string; x: number; y: number }[] = [
   { id: "tl", label: "↖", x: 0, y: 0 },
@@ -25,14 +29,14 @@ function setImage(id: string, f: (o: ImageOverlay) => ImageOverlay) {
   edit((p) => updateOverlay(p, id, (o) => (o.type === "image" ? f(o as ImageOverlay) : o)));
 }
 
-/** Logo / marca de agua: agregar y ajustar la imagen seleccionada. */
+/** Imagen: una capa más (posición, tamaño, rotación, opacidad, duración, animación) o marca de agua. */
 export function ImageOverlaySection({ project }: { project: Project }) {
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   const o = project.overlays.find((x) => x.type === "image" && selection.includes(x.id)) as ImageOverlay | undefined;
   const m = o ? project.media.find((x) => x.id === o.mediaId) : undefined;
   // Ubica la imagen en una esquina con el mismo margen en píxeles en los dos ejes.
-  const place = (cx: number, cy: number) => {
-    if (!o || !m) return;
+  const corner = (cx: number, cy: number) => {
+    if (!o || !m) return null;
     const W = project.canvas.width;
     const H = project.canvas.height;
     const wPx = o.width * W;
@@ -40,11 +44,15 @@ export function ImageOverlaySection({ project }: { project: Project }) {
     const margin = 0.03 * W;
     const x = cx === 0.5 ? 0.5 : cx === 0 ? (margin + wPx / 2) / W : 1 - (margin + wPx / 2) / W;
     const y = cy === 0.5 ? 0.5 : cy === 0 ? (margin + hPx / 2) / H : 1 - (margin + hPx / 2) / H;
-    setImage(o.id, (z) => ({ ...z, x, y }));
+    return { x, y };
+  };
+  const place = (cx: number, cy: number) => {
+    const c = corner(cx, cy);
+    if (o && c) setImage(o.id, (z) => ({ ...z, ...c }));
   };
   return (
-    <Section title="Logo o marca de agua" testId="image-overlay-section">
-      <Button icon={<ImageAdd20Regular />} onClick={() => void addLogoWithDialog()} disabled={!project.clips.length} data-testid="add-logo">
+    <Section title="Imagen" testId="image-overlay-section">
+      <Button icon={<ImageAdd20Regular />} onClick={() => void addImageWithDialog()} disabled={!project.clips.length} data-testid="add-logo">
         Agregar imagen
       </Button>
       {o && m && (
@@ -61,9 +69,47 @@ export function ImageOverlaySection({ project }: { project: Project }) {
           <Field label="Esquinas redondeadas" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{Math.round(o.radius * 200)}%</span>}>
             <RangeSlider label="Esquinas redondeadas" value={o.radius} min={0} max={0.5} step={0.01} resetTo={0} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setImage(o.id, (z) => ({ ...z, radius: v }))} testId="image-radius" />
           </Field>
+          <Field label="Rotación" aside={<span className="t-caption tabular text-[var(--text-secondary)]">{Math.round(o.rotation ?? 0)}°</span>}>
+            <RangeSlider label="Rotación de la imagen" value={o.rotation ?? 0} min={-180} max={180} step={1} resetTo={0} origin={0} onStart={gestureStart} onEnd={gestureEnd} onChange={(v) => setImage(o.id, (z) => ({ ...z, rotation: v }))} testId="image-rotation" />
+          </Field>
           <Field inline label="Sombra">
             <Toggle checked={o.shadow} onChange={(on) => setImage(o.id, (z) => ({ ...z, shadow: on }))} label="Sombra de la imagen" testId="image-shadow" />
           </Field>
+          <Field inline label="Usar como marca de agua" hint={o.watermark ? "Dura todo el video y se ajusta sola si cambia el largo." : "La imagen pasa a durar todo el video, en una esquina."}>
+            <Toggle
+              checked={!!o.watermark}
+              onChange={(on) => {
+                // Un solo paso de deshacer: marca de agua + abajo a la derecha.
+                const c = on ? corner(1, 1) : null;
+                edit((p) => {
+                  const q = setWatermark(p, o.id, on);
+                  return c ? updateOverlay(q, o.id, (z) => ({ ...z, ...c })) : q;
+                });
+              }}
+              label="Usar como marca de agua"
+              testId="image-watermark"
+            />
+          </Field>
+          {!o.watermark && (
+            <>
+              <Field label="Duración" aside={<span className="t-caption tabular text-[var(--text-secondary)]" data-testid="image-duration-value">{o.duration.toFixed(1)} s</span>}>
+                <RangeSlider
+                  label="Duración de la imagen"
+                  value={o.duration}
+                  min={MIN_OVERLAY}
+                  max={Math.max(MIN_OVERLAY, totalDuration(project) - o.start)}
+                  step={0.1}
+                  resetTo={5}
+                  onStart={gestureStart}
+                  onEnd={gestureEnd}
+                  onChange={(v) => setImage(o.id, (z) => ({ ...z, duration: v }))}
+                  testId="image-duration"
+                />
+              </Field>
+              <AnimField label="Entrada" value={o.animIn ?? null} options={IMAGE_ANIMS} onChange={(a) => setImage(o.id, (z) => ({ ...z, animIn: a }))} testId="image-anim-in" />
+              <AnimField label="Salida" value={o.animOut ?? null} options={IMAGE_ANIMS} onChange={(a) => setImage(o.id, (z) => ({ ...z, animOut: a }))} testId="image-anim-out" />
+            </>
+          )}
           <div className="flex items-center gap-1" role="group" aria-label="Ubicar en">
             <span className="t-caption mr-1 text-[var(--text-secondary)]">Ubicar</span>
             {CORNERS.map((c) => (

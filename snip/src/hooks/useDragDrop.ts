@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { onFileDrag } from "../lib/platform";
-import { isAudio, isProjectFile, isVideo } from "../lib/files";
+import { isAudio, isImage, isProjectFile, isVideo } from "../lib/files";
 import { useEditor } from "../store/editor";
 import { addMusicFile, addVideos, openPaths, warnUnsupported } from "../store/controller";
+import { importFilesAt } from "../store/clipboard";
+import { dropTargetAt } from "../components/timeline/dropTarget";
 
 export type DropKind = "open" | "add" | "music" | "invalid";
 
@@ -14,6 +16,8 @@ export function dropKind(paths: string[], inEditor: boolean): DropKind {
     return "open";
   }
   if (inEditor && paths.length === 1 && isAudio(paths[0])) return "music";
+  // En el editor se puede soltar cualquier mezcla de videos, audio e imágenes.
+  if (inEditor && paths.every((p) => isVideo(p) || isAudio(p) || isImage(p))) return "add";
   return "invalid";
 }
 
@@ -26,11 +30,16 @@ export function useDragDrop() {
     onFileDrag((s) => {
       const st = useEditor.getState();
       const inEditor = st.phase === "editor";
+      const target = (pos?: { x: number; y: number }) => (inEditor && lastKind !== "invalid" && pos ? dropTargetAt(pos.x, pos.y) : null);
       if (s.type === "enter") {
         lastKind = dropKind(s.paths, inEditor);
-        useEditor.setState({ drag: lastKind === "invalid" ? "invalid" : "valid" });
+        useEditor.setState({ drag: lastKind === "invalid" ? "invalid" : "valid", dropTarget: target(s.pos) });
+      } else if (s.type === "over") {
+        const t = target(s.pos);
+        const cur = st.dropTarget;
+        if (JSON.stringify(t) !== JSON.stringify(cur)) useEditor.setState({ dropTarget: t });
       } else if (s.type === "leave") {
-        useEditor.setState({ drag: "none" });
+        useEditor.setState({ drag: "none", dropTarget: null });
       } else if (s.type === "drop") {
         const kind = dropKind(s.paths, inEditor);
         if (kind === "invalid") {
@@ -38,8 +47,15 @@ export function useDragDrop() {
           warnUnsupported();
           return;
         }
-        useEditor.setState({ drag: "none" });
-        if (kind === "add") void addVideos(s.paths);
+        useEditor.setState({ drag: "none", dropTarget: null });
+        // Soltado sobre una pista: va a esa pista, en ese tiempo.
+        const t = inEditor ? (s.pos ? dropTargetAt(s.pos.x, s.pos.y) : null) : null;
+        if (t) {
+          void importFilesAt(s.paths, t.time, { target: t });
+          return;
+        }
+        if (kind === "add" && !s.paths.every(isVideo)) void importFilesAt(s.paths);
+        else if (kind === "add") void addVideos(s.paths);
         else if (kind === "music") void addMusicFile(s.paths[0]);
         else void openPaths(s.paths);
       }

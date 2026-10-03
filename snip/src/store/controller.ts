@@ -699,6 +699,20 @@ export function takeTextFocus(): string | null {
   return t;
 }
 
+/** "Agregar imagen": una capa normal en el playhead (se puede repetir las veces que haga falta). */
+export async function addImageWithDialog() {
+  const p = activeProject();
+  if (!p || !p.clips.length) {
+    pushToast({ severity: "caution", title: "Agregá un video antes de sumar una imagen" });
+    return;
+  }
+  const paths = await pickFiles("Elegí una o más imágenes", [IMAGE_FILTER], true);
+  if (!paths.length) return;
+  const { importFilesAt } = await import("./clipboard");
+  await importFilesAt(paths);
+  useEditor.setState({ inspectorTab: "video", inspectorOpen: true });
+}
+
 /** Logo o marca de agua: arriba a la derecha, durante todo el video. */
 export async function addLogoWithDialog() {
   const p = activeProject();

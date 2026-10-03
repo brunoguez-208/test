@@ -81,7 +81,7 @@ function ClipWave({ clip, media, start, duration, geo }: { clip: Clip; media: Me
 export function MainAudioTrack({ project, geo }: { project: Project; geo: Geo }) {
   const spans = useMemo(() => layout(project.clips), [project.clips]);
   return (
-    <div className="tl-track relative" style={{ height: AUDIO_H }} data-testid="audio-track">
+    <div className="tl-track relative" style={{ height: AUDIO_H }} data-testid="audio-track" data-drop="audio" data-row-h={AUDIO_H} data-row-base={-1}>
       {project.clips.map((c, i) => (
         <ClipWave key={c.id} clip={c} media={project.media.find((m) => m.id === c.mediaId)} start={spans[i].start} duration={spans[i].duration} geo={geo} />
       ))}
@@ -183,7 +183,7 @@ export function musicRows(p: Project): number {
 export function MusicTrack({ project, geo, snapOn }: { project: Project; geo: Geo; snapOn: boolean }) {
   const selection = useEditor((s) => activeTab(s)?.selection ?? []);
   return (
-    <div className="tl-track relative" style={{ height: Math.max(1, musicRows(project)) * MUSIC_H }} data-testid="music-track">
+    <div className="tl-track relative" style={{ height: Math.max(1, musicRows(project)) * MUSIC_H }} data-testid="music-track" data-drop="audio" data-row-h={MUSIC_H} data-row-base={0}>
       {project.music.map((mu) => (
         <MusicView
           key={mu.id}

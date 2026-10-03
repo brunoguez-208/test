@@ -3,6 +3,7 @@
 // (cola, miniaturas, formas de onda, intermedios). Los efectos (hablar con
 // Rust) viven en ./controller.ts.
 
+import { syncWatermarks } from "../project/overlayOps";
 import { create } from "zustand";
 import { useEffect, useState } from "react";
 import type { Project } from "../project/model";
@@ -25,6 +26,14 @@ export interface Toast {
   action?: { label: string; run: () => void };
   /** Texto técnico (FFmpeg) para "Ver detalles" y "Copiar". */
   detail?: string | null;
+}
+
+/** Dónde caen archivos arrastrados desde el Explorador. */
+export interface DropTarget {
+  kind: "main" | "overlay" | "audio";
+  /** Fila (capa o pista de audio); -1 = la primera libre. */
+  row: number;
+  time: number;
 }
 
 export interface Tab {
@@ -90,6 +99,8 @@ export interface EditorState {
   autoSubs: { phase: "download" | "audio" | "transcribing"; percent: number; detail?: string } | null;
 
   drag: DragHint;
+  /** Pista y tiempo bajo el puntero al arrastrar archivos sobre el timeline. */
+  dropTarget: DropTarget | null;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -121,6 +132,7 @@ export const initialState: EditorState = {
   imageEdit: null,
   autoSubs: null,
   drag: "none",
+  dropTarget: null,
   toasts: [],
   focused: true,
   confirm: null,
@@ -217,7 +229,7 @@ export function edit(f: (p: Project) => Project) {
   const changed = f(before);
   if (changed === before) return;
   // El lienzo automático sigue al primer clip (si se rota, recorta, borra o reordena).
-  const next = fitCanvas(changed);
+  const next = syncWatermarks(fitCanvas(changed));
   const stamped = sameEdit(next, before) ? next : { ...next, updatedAt: Date.now() };
   updateTab(tab.id, (t) => ({ ...t, history: commit(t.history, stamped) }));
 }

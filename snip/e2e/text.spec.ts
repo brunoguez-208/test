@@ -154,11 +154,14 @@ test.describe("logo y exportación con capas", () => {
     await page.getByTestId("add-logo").click();
     await expect(page.getByTestId("image-editor")).toBeVisible();
     await expect(page.getByTestId("overlay-item")).toContainText("logo.png");
+    // Es una capa normal en el playhead; "Usar como marca de agua" la extiende a todo el video.
+    await expect.poll(async () => (await project(page))?.overlays[0]).toMatchObject({ type: "image", start: 0, duration: 5 });
+    await page.getByTestId("image-watermark").click();
     await page.getByTestId("image-place-bl").click();
     await page.getByTestId("image-shadow").click();
-    await expect.poll(async () => (await project(page))?.overlays[0]).toMatchObject({ type: "image", shadow: true, start: 0, duration: 12 });
-    await expect.poll(async () => ((await project(page))!.overlays[0] as { x: number }).x).toBeLessThan(0.2);
-    expect(((await project(page))!.overlays[0] as { y: number }).y).toBeGreaterThan(0.8);
+    await expect.poll(async () => (await project(page))?.overlays[0]).toMatchObject({ type: "image", shadow: true, start: 0, duration: 12, watermark: true });
+    await expect.poll(async () => ((await project(page))!.overlays[0] as { x: number }).x).toBeLessThan(0.3);
+    expect(((await project(page))!.overlays[0] as { y: number }).y).toBeGreaterThan(0.6);
     await page.screenshot({ path: `${SHOTS}/25-logo.png` });
     await page.getByTestId("add-text").click();
     await expect(page.getByTestId("text-content")).toBeFocused();

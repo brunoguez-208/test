@@ -173,7 +173,7 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - [x] A1. Grabaciones de NVIDIA (ShadowPlay / Instant Replay) que fallaban con NVENC
 - [x] A2. Controles de ventana duplicados al maximizar
 - [x] A3. Copiar / cortar / pegar / duplicar / agrupar + portapapeles de Windows + pegar efectos
-- [ ] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
+- [x] A4. "Agregar imagen" como capa normal (+ "Usar como marca de agua") y arrastrar a la pista
 - [ ] A5. Edición de audio (pistas, separar audio, keyframes de volumen, crossfade, "Mejorar voz")
 - [ ] A6. Pistas: ocultar, silenciar, bloquear; Q/W; atajos en el panel `?`
 - [ ] A7. Proyecto .snip desde Exportar, "Guardar como…", empaquetar, versiones y plantillas
@@ -249,3 +249,19 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Menú contextual (clic derecho) en clips, capas, audio y subtítulos con las mismas acciones.
 - El audio ya admite varias filas (`track`): pegar o arrastrar hacia abajo usa otra pista.
 - Se sacó Ctrl+G de los atajos del navegador que se bloquean (si no, nunca llegaba a la app).
+
+### Notas de A4 (imagen como capa y arrastrar a la pista)
+- "Agregar imagen" (pestaña Video) suma una capa normal en el playhead, centrada, por 5 s; se
+  puede repetir (una o varias imágenes por vez). Posición (arrastrando en el preview), tamaño,
+  rotación, opacidad, esquinas, sombra, duración y animación de entrada/salida (fundido,
+  deslizar, pop). Todo lo dibuja el mismo raster del preview y de la exportación, así que la
+  paridad es por construcción; la clave por cuadro incluye las animaciones de imágenes.
+- "Usar como marca de agua": la imagen pasa a durar todo el video (abajo a la derecha, 85 %) y se
+  re-ajusta sola en cada edición si el video cambia de largo (`syncWatermarks`). Las esquinas
+  rápidas siguen ahí. Un solo paso de deshacer.
+- Arrastrar desde el Explorador: si se suelta sobre una pista del timeline va a esa pista en el
+  tiempo del puntero (se ve una guía): imágenes a esa fila de capas, video sobre las capas →
+  picture-in-picture, audio (o el sonido de un video) a esa pista de audio, video a la pista
+  principal en ese punto. Fuera del timeline, como antes (ahora también acepta imágenes y
+  mezclas de archivos). Tauri da la posición en píxeles físicos: se divide por devicePixelRatio.
+- Modelo (Rust y TS): `ImageLayer.rotation`, `animIn`, `animOut`, `watermark`.

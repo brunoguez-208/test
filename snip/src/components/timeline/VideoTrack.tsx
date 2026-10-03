@@ -268,6 +268,7 @@ export function VideoTrack({ project, geo, snapOn }: { project: Project; geo: Ge
       className="tl-track relative"
       style={{ height: VIDEO_H }}
       data-testid="video-track"
+      data-drop="main"
       onContextMenu={(e) => {
         const el = (e.target as HTMLElement).closest("[data-clip-id]") as HTMLElement | null;
         if (el) openContextMenu(e, itemMenu(el.dataset.clipId!));

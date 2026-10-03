@@ -114,25 +114,33 @@ export function mediaSrc(path: string): string {
   return convertFileSrc(path);
 }
 
+/** Posición en px CSS de la ventana. */
+export interface DragPos {
+  x: number;
+  y: number;
+}
 export type DragState =
-  | { type: "enter"; paths: string[] }
-  | { type: "over" }
-  | { type: "drop"; paths: string[] }
+  | { type: "enter"; paths: string[]; pos?: DragPos }
+  | { type: "over"; pos?: DragPos }
+  | { type: "drop"; paths: string[]; pos?: DragPos }
   | { type: "leave" };
 
 /** Drag & drop nativo de la ventana (Tauri da las rutas reales de los archivos). */
 export function onFileDrag(cb: (s: DragState) => void): Promise<UnlistenFn> {
   return getCurrentWebview().onDragDropEvent((event) => {
     const p = event.payload;
+    // Tauri da la posición en píxeles físicos.
+    const pos = (q: { x: number; y: number } | undefined): DragPos | undefined =>
+      q ? { x: q.x / (window.devicePixelRatio || 1), y: q.y / (window.devicePixelRatio || 1) } : undefined;
     switch (p.type) {
       case "enter":
-        cb({ type: "enter", paths: p.paths });
+        cb({ type: "enter", paths: p.paths, pos: pos(p.position) });
         break;
       case "over":
-        cb({ type: "over" });
+        cb({ type: "over", pos: pos(p.position) });
         break;
       case "drop":
-        cb({ type: "drop", paths: p.paths });
+        cb({ type: "drop", paths: p.paths, pos: pos(p.position) });
         break;
       default:
         cb({ type: "leave" });

@@ -594,6 +594,7 @@ kbd.kbd {
 .tl-handle:focus-visible .tl-handle-body { box-shadow: 0 0 0 2px var(--stroke-focus-outer); }
 .tl-playhead { background: var(--text-primary); box-shadow: 0 0 4px rgb(0 0 0 / 0.45); transition: opacity 150ms linear; }
 .tl-playhead.is-outside { opacity: 0.55; }
+.tl-drop-line { background: var(--accent-fill); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-fill) 25%, transparent); }
 .tl-playhead-knob { background: var(--text-primary); box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); }
 :root[data-theme="light"] .tl-playhead,
 :root[data-theme="light"] .tl-playhead-knob { background: #1a1a1a; }

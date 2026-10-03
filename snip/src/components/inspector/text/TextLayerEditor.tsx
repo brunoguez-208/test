@@ -17,7 +17,7 @@ import { Field, Section, fmtNum } from "../Field";
 
 type TextOverlay = Overlay & TextLayer;
 
-const ANIMS: { value: TextAnimKind | "none"; label: string }[] = [
+export const ANIMS: { value: TextAnimKind | "none"; label: string }[] = [
   { value: "none", label: "Ninguna" },
   { value: "fade", label: "Fundido" },
   { value: "slide", label: "Deslizar" },
@@ -30,7 +30,7 @@ function setText(id: string, f: (o: TextOverlay) => TextOverlay) {
 }
 const setStyle = (id: string, patch: Partial<TextStyle>) => setText(id, (o) => ({ ...o, style: { ...o.style, ...patch } }));
 
-function AnimField({ label, value, onChange, testId }: { label: string; value: TextAnim | null; onChange: (a: TextAnim | null) => void; testId: string }) {
+export function AnimField({ label, value, onChange, testId, options = ANIMS }: { label: string; value: TextAnim | null; onChange: (a: TextAnim | null) => void; testId: string; options?: typeof ANIMS }) {
   return (
     <Field label={label}>
       <div className="flex items-center gap-2">
@@ -38,7 +38,7 @@ function AnimField({ label, value, onChange, testId }: { label: string; value: T
           className="min-w-0 flex-1"
           label={label}
           value={value?.kind ?? "none"}
-          options={ANIMS}
+          options={options}
           onChange={(k) => onChange(k === "none" ? null : { kind: k, duration: value?.duration ?? 0.4 })}
           testId={testId}
         />

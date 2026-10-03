@@ -95,7 +95,8 @@ declare global {
 export interface MockState {
   emit: (event: string, payload: unknown) => Promise<void>;
   dragEnter: (paths: string[]) => Promise<void>;
-  drop: (paths: string[]) => Promise<void>;
+  drop: (paths: string[], position?: { x: number; y: number }) => Promise<void>;
+  dragOver: (position: { x: number; y: number }) => Promise<void>;
   dragLeave: () => Promise<void>;
   calls: { cmd: string; args: unknown }[];
   jobs: ExportJob[];
@@ -172,7 +173,8 @@ export function installTauriMock() {
   const state: MockState = {
     emit: (event, payload) => emit(event, payload),
     dragEnter: (paths) => emit("tauri://drag-enter", { paths, position: { x: 400, y: 300 } }),
-    drop: (paths) => emit("tauri://drag-drop", { paths, position: { x: 400, y: 300 } }),
+    drop: (paths, position = { x: 400, y: 300 }) => emit("tauri://drag-drop", { paths, position }),
+    dragOver: (position) => emit("tauri://drag-over", { position }),
     dragLeave: () => emit("tauri://drag-leave", null),
     calls,
     jobs: [],

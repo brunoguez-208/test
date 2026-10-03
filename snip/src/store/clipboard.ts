@@ -18,13 +18,13 @@ import {
   type ClipboardData,
   type Effects,
 } from "../project/clipboard";
-import { addImageAt, addOverlay, textFromTemplate } from "../project/overlayOps";
+import { addImageAt, addOverlay, addPip, textFromTemplate } from "../project/overlayOps";
 import { TEXT_TEMPLATES } from "../project/templates";
 import { addMusic, deleteClips, insertMedia, makeId, EditError } from "../project/ops";
 import { layout, totalDuration } from "../project/timeline";
 import { DEFAULT_VIDEO, type MediaRef, type Project } from "../project/model";
 import type { MenuEntry } from "../components/ui/ContextMenu";
-import { activeProject, activeTab, edit, pushToast, setSelection, useEditor } from "./editor";
+import { activeProject, activeTab, edit, pushToast, setSelection, useEditor, type DropTarget } from "./editor";
 import { ensureWaveform, notifyEditError, notifyError } from "./controller";
 
 let internal: ClipboardData | null = null;
@@ -184,40 +184,57 @@ function mainIndexAt(p: Project, t: number): number {
 }
 
 /**
- * Agrega archivos en el playhead según su tipo: videos a la pista principal,
- * audio a una pista de audio libre, imágenes como capa.
+ * Agrega archivos en el tiempo `t` según su tipo: videos a la pista principal,
+ * audio a una pista de audio libre, imágenes como capa. Con `target` (soltados
+ * sobre una pista del timeline) van a esa fila: un video sobre una capa es un
+ * picture-in-picture y sobre una pista de audio suma solo su sonido.
  */
-export async function importFilesAt(paths: string[], t = useEditor.getState().time, opts: { track?: number; lane?: number } = {}) {
+export async function importFilesAt(paths: string[], t = useEditor.getState().time, opts: { target?: DropTarget } = {}) {
   const usable = paths.filter((p) => isVideo(p) || isAudio(p) || isImage(p));
   if (!usable.length) {
-    pushToast({ severity: "caution", title: "Ese tipo de archivo no se puede pegar", message: "Videos MP4/MOV/MKV/WebM, audio o imágenes PNG/JPG/WebP." });
+    pushToast({ severity: "caution", title: "Ese tipo de archivo no se puede agregar", message: "Videos MP4/MOV/MKV/WebM, audio o imágenes PNG/JPG/WebP." });
     return;
   }
   const media = await probeAll(usable);
   if (!media.length) return;
+  const target = opts.target;
   const ids: string[] = [];
   try {
     edit((p0) => {
       let p = p0;
-      const videos = media.filter((m) => m.kind === "video");
+      const asAudio = (m: MediaRef) => m.kind === "audio" || (m.kind === "video" && target?.kind === "audio" && m.hasAudio);
+      const asPip = (m: MediaRef) => m.kind === "video" && target?.kind === "overlay" && p.clips.length > 0;
+      const videos = media.filter((m) => m.kind === "video" && !asAudio(m) && !asPip(m));
       if (videos.length) {
         const before = new Set(p.clips.map((c) => c.id));
         p = insertMedia(p, videos, mainIndexAt(p, t));
         ids.push(...p.clips.filter((c) => !before.has(c.id)).map((c) => c.id));
       }
       if (!p.clips.length) throw new EditError("Agregá un video antes de sumar audio o imágenes.");
-      let at = t;
-      for (const m of media.filter((x) => x.kind === "audio")) {
+      let at = Math.min(t, Math.max(0, totalDuration(p) - 0.2));
+      for (const m of media.filter(asAudio)) {
         const before = new Set(p.music.map((x) => x.id));
         p = addMusic(p, m, at);
         const mu = p.music.find((x) => !before.has(x.id))!;
-        const track = freeMusicTrack(p, mu.start, mu.start + (mu.outPoint - mu.inPoint), opts.track ?? 0, mu.id);
+        const prefer = target?.kind === "audio" && target.row >= 0 ? target.row : 0;
+        const track = freeMusicTrack(p, mu.start, mu.start + (mu.outPoint - mu.inPoint), prefer, mu.id);
         p = { ...p, music: p.music.map((x) => (x.id === mu.id ? { ...x, track, volume: 1, fadeOut: 0 } : x)) };
         ids.push(mu.id);
       }
+      const inLane = (q: Project, id: string) => {
+        if (target?.kind !== "overlay" || target.row < 0) return q;
+        const o = q.overlays.find((x) => x.id === id)!;
+        const busy = q.overlays.some((x) => x.id !== id && x.lane === target.row && x.start < o.start + o.duration - 1e-6 && x.start + x.duration > o.start + 1e-6);
+        return busy ? q : { ...q, overlays: q.overlays.map((x) => (x.id === id ? { ...x, lane: target.row } : x)) };
+      };
+      for (const m of media.filter(asPip)) {
+        const [r, id] = addPip(p, m, at);
+        p = inLane(r, id);
+        ids.push(id);
+      }
       for (const m of media.filter((x) => x.kind === "image")) {
         const [r, id] = addImageAt(p, m, at);
-        p = opts.lane !== undefined ? { ...r, overlays: r.overlays.map((o) => (o.id === id ? { ...o, lane: opts.lane! } : o)) } : r;
+        p = inLane(r, id);
         ids.push(id);
         at = Math.min(at + 0.5, Math.max(0, totalDuration(p) - 0.5));
       }

@@ -5,8 +5,10 @@ import { useEditor } from "../store/editor";
 /** Capa de drop sobre el editor: los videos se suman al proyecto; reacciona distinto si no sirve. */
 export function DropOverlay() {
   const drag = useEditor((s) => s.drag);
+  const onTrack = useEditor((s) => !!s.dropTarget);
   const phase = useEditor((s) => s.phase);
-  const show = phase === "editor" && drag !== "none";
+  // Sobre una pista del timeline se ve solo la guía de drop en la pista.
+  const show = phase === "editor" && drag !== "none" && !onTrack;
   const valid = drag === "valid";
   return (
     <AnimatePresence>
@@ -31,7 +33,7 @@ export function DropOverlay() {
             <span className="drop-icon flex h-14 w-14 items-center justify-center rounded-full text-[28px]">{valid ? <ArrowDownload20Regular /> : <Warning20Filled />}</span>
             <p className="t-subtitle">{valid ? "Soltalo para sumarlo al proyecto" : "Ese formato no se abre"}</p>
             <p className="t-body text-[var(--text-secondary)]">
-              {valid ? "Los videos van al final del timeline; un audio va a la pista de música." : "Snip abre MP4, MOV, MKV, WebM y proyectos .snip."}
+              {valid ? "Los videos van al final del timeline, el audio a una pista de audio y las imágenes como capa. Soltalos sobre una pista para elegir dónde." : "Snip abre MP4, MOV, MKV, WebM y proyectos .snip."}
             </p>
           </motion.div>
         </motion.div>

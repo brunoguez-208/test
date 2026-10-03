@@ -191,6 +191,12 @@ export interface ImageLayer {
   opacity: number;
   radius: number;
   shadow: boolean;
+  /** Rotación en grados (sentido horario). */
+  rotation?: number;
+  animIn?: TextAnim | null;
+  animOut?: TextAnim | null;
+  /** Marca de agua: dura todo el video (se ajusta sola si cambia el largo). */
+  watermark?: boolean;
 }
 export interface PipLayer {
   type: "video";

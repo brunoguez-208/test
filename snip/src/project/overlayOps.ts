@@ -60,6 +60,32 @@ export function addImageAt(p: Project, media: MediaRef, at: number, duration = 5
   return addOverlay(q, layer, at, duration);
 }
 
+/**
+ * "Usar como marca de agua": la imagen pasa a durar todo el video y se ubica
+ * en una esquina; si se desactiva vuelve a ser una capa normal.
+ */
+export function setWatermark(p: Project, id: string, on: boolean): Project {
+  const total = Math.max(MIN_OVERLAY, totalDuration(p));
+  return updateOverlay(p, id, (o) => {
+    if (o.type !== "image") return o;
+    if (!on) return { ...o, watermark: false, duration: Math.min(o.duration, 5), start: Math.min(o.start, Math.max(0, total - 5)) };
+    return { ...o, watermark: true, start: 0, duration: total, animIn: null, animOut: null, opacity: o.opacity >= 1 ? 0.85 : o.opacity };
+  });
+}
+
+/** Las marcas de agua siguen el largo del video (se llama en cada edición). */
+export function syncWatermarks(p: Project): Project {
+  if (!p.overlays.some((o) => o.type === "image" && o.watermark)) return p;
+  const total = Math.max(MIN_OVERLAY, totalDuration(p));
+  let changed = false;
+  const overlays = p.overlays.map((o) => {
+    if (o.type !== "image" || !o.watermark || (o.start === 0 && Math.abs(o.duration - total) < 1e-9)) return o;
+    changed = true;
+    return { ...o, start: 0, duration: total };
+  });
+  return changed ? { ...p, overlays } : p;
+}
+
 export function updateOverlay(p: Project, id: string, f: (o: Overlay) => Overlay): Project {
   let changed = false;
   const overlays = p.overlays.map((o) => {

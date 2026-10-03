@@ -1,3 +1,4 @@
+import { setDropGeo } from "./dropTarget";
 import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -192,6 +193,8 @@ export function Timeline({ project }: { project: Project }) {
   const area = useRef<HTMLDivElement>(null);
   const width = useTrackWidth(area);
   const geo = useMemo(() => geometry(project, width), [project, width]);
+  setDropGeo(geo);
+  const dropTarget = useEditor((s) => s.dropTarget);
   const [snapOn, setSnapOn] = useState(true);
   const tab = useEditor((s) => activeTab(s));
   const time = useEditor((s) => s.time);
@@ -383,6 +386,17 @@ export function Timeline({ project }: { project: Project }) {
             {hasMusic && <MusicTrack project={project} geo={geo} snapOn={snapOn} />}
           </div>
           <Playhead geo={geo} height={tracksH} />
+          {dropTarget && (
+            <motion.div
+              className="tl-drop-line pointer-events-none absolute top-0 z-20 w-0.5 rounded-full"
+              style={{ left: tToX(geo, dropTarget.time) - 1, height: tracksH }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              data-testid="drop-target"
+              data-kind={dropTarget.kind}
+              data-row={dropTarget.row}
+            />
+          )}
         </div>
       </div>
       {/* Barra de desplazamiento cuando hay zoom */}
