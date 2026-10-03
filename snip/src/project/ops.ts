@@ -19,6 +19,7 @@ import {
   type Transition,
 } from "./model";
 import { EPS, clipDuration, layout, segmentDuration, totalDuration } from "./timeline";
+import { clipGeometry } from "./geometry";
 
 let seq = 0;
 /** Id corto y único (sirve como nombre de archivo del autoguardado). */
@@ -92,10 +93,13 @@ export function addMedia(p: Project, m: MediaRef): [Project, MediaRef] {
 /** Lienzo automático: tamaño (par) y fps del primer clip. */
 export function fitCanvas(p: Project): Project {
   if (!p.canvas.auto || p.clips.length === 0) return p;
-  const m = mediaById(p, p.clips[0].mediaId);
+  const first = p.clips[0];
+  const m = mediaById(p, first.mediaId);
   if (!m || m.kind !== "video") return p;
-  const width = Math.max(2, m.width - (m.width % 2));
-  const height = Math.max(2, m.height - (m.height % 2));
+  // Tamaño visible del primer clip (con rotación y recorte).
+  const g = clipGeometry(first.video, m);
+  const width = Math.max(2, Math.round(g.width) - (Math.round(g.width) % 2));
+  const height = Math.max(2, Math.round(g.height) - (Math.round(g.height) % 2));
   const fpsNum = m.fpsNum || Math.round(m.fps);
   const fpsDen = m.fpsDen || 1;
   const c = p.canvas;

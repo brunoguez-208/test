@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { MediaRef, Project, TransitionKind } from "../src/project/model";
 import { canvasFps } from "../src/project/model";
-import { insertMedia, newProject, setTransition, updateClip } from "../src/project/ops";
+import { fitCanvas, insertMedia, newProject, setTransition, updateClip } from "../src/project/ops";
+import { LOOKS } from "../src/engine/color";
 import { layout } from "../src/project/timeline";
 
 const FF_DIR = process.env.SNIP_FFMPEG_DIR ?? "/opt/ffmpeg9/bin";
@@ -56,7 +57,9 @@ test.beforeAll(() => {
 });
 
 test.afterAll(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true });
+  // SNIP_PARITY_KEEP=1 deja los cuadros para mirarlos a mano.
+  if (process.env.SNIP_PARITY_KEEP) console.log(`[paridad] cuadros en ${dir}`);
+  else if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
 function exportProject(p: Project, name: string): string {
@@ -100,7 +103,7 @@ function compare(a: string, b: string): number {
   return Number(m[1]);
 }
 
-async function check(page: Page, p: Project, frames: Record<string, number>, tag: string, min: number) {
+async function check(page: Page, p: Project, frames: Record<string, number>, tag: string, min: number, control = false) {
   await page.route("**/parity-media/*", (route) => route.fulfill({ path: join(dir, decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop()!)) }));
   await page.goto("/");
   await expect(page.getByTestId("welcome-open")).toBeVisible();
@@ -116,11 +119,13 @@ async function check(page: Page, p: Project, frames: Record<string, number>, tag
   }
   // Control: el mismo cuadro del preview contra uno corrido 3 cuadros del export
   // tiene que puntuar claramente peor (si no, el SSIM no estaría midiendo nada).
-  const k0 = ks[ks.length - 2];
-  const [shifted] = exportedFrames(join(dir, `${tag}.mp4`), [k0 + 3], `${tag}-control`);
-  const control = compare(prev[ks.length - 2], shifted);
-  console.log(`[paridad ${tag}] control(+3 cuadros)=${control.toFixed(3)}`);
-  expect(control).toBeLessThan(results[ks.length - 2].ssim - 0.01);
+  if (control) {
+    const k0 = ks[ks.length - 2];
+    const [shifted] = exportedFrames(join(dir, `${tag}.mp4`), [k0 + 3], `${tag}-control`);
+    const c = compare(prev[ks.length - 2], shifted);
+    console.log(`[paridad ${tag}] control(+3 cuadros)=${c.toFixed(3)}`);
+    expect(c).toBeLessThan(results[ks.length - 2].ssim - 0.01);
+  }
   console.log(`[paridad ${tag}] ` + results.map((r) => `${r.label}=${r.ssim.toFixed(3)}`).join(" "));
   expect(results.filter((r) => r.ssim < min)).toEqual([]);
 }
@@ -148,7 +153,7 @@ test("paridad: transiciones (cada tipo, a mitad de la transición)", async ({ pa
     frames[kind] = Math.round((s.start + 0.3) * fps);
     frames[`${kind}-después`] = Math.round((s.start + 0.9) * fps);
   });
-  await check(page, p, frames, "transiciones", 0.95);
+  await check(page, p, frames, "transiciones", 0.95, true);
 });
 
 test("paridad: velocidad, encuadre con barras y fundidos de entrada/salida", async ({ page }) => {
@@ -158,5 +163,53 @@ test("paridad: velocidad, encuadre con barras y fundidos de entrada/salida", asy
   p = updateClip(p, p.clips[2].id, (c) => ({ ...c, speed: 0.5 }));
   p = { ...p, fades: { fadeIn: 1, fadeOut: 1 } };
   // A ×2: 0–2 s · C con barras: 2–4 s · B ×0,5: 4–6 s.
-  await check(page, p, { "fundido-entrada": 9, "velocidad-x2": 40, "barras": 85, "camara-lenta": 130, "fundido-salida": 170 }, "velocidad", 0.95);
+  await check(page, p, { "fundido-entrada": 9, "velocidad-x2": 40, "barras": 85, "camara-lenta": 130, "fundido-salida": 170 }, "velocidad", 0.95, true);
+});
+
+/** Aplica cambios de imagen a un clip (y reajusta el lienzo como hace el editor). */
+function withVideo(p: Project, i: number, v: Partial<Project["clips"][number]["video"]>): Project {
+  return fitCanvas(updateClip(p, p.clips[i].id, (c) => ({ ...c, video: { ...c.video, ...v } })));
+}
+
+/** Cuadro en la mitad de cada clip. */
+function midFrames(p: Project, labels: string[]): Record<string, number> {
+  const fps = canvasFps(p.canvas);
+  const spans = layout(p.clips);
+  return Object.fromEntries(labels.map((l, i) => [l, Math.round((spans[i].start + spans[i].duration / 2) * fps)]));
+}
+
+test("paridad: rotar, voltear y recortar", async ({ page }) => {
+  test.setTimeout(300_000);
+  let p = base([["a.webm", 0, 1], ["b.webm", 0, 1], ["c.webm", 0, 1], ["a.webm", 1, 2]]);
+  // El primer clip define el lienzo: rotado 90° y recortado → vertical.
+  p = withVideo(p, 0, { rotate: 90, crop: { x: 0.1, y: 0.2, w: 0.8, h: 0.6, aspect: null } });
+  p = withVideo(p, 1, { flipH: true, flipV: true });
+  p = withVideo(p, 2, { rotate: 270, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5, aspect: "1:1" } });
+  p = withVideo(p, 3, { rotate: 180, flipH: true, crop: { x: 0.3, y: 0, w: 0.7, h: 1, aspect: null } });
+  expect(p.canvas.width).toBeLessThan(p.canvas.height);
+  await check(page, p, midFrames(p, ["rotar-recortar", "voltear", "rotar270-cuadrado", "rotar180-voltear-recortar"]), "geometria", 0.95);
+});
+
+test("paridad: ajustes de color, cada look y nitidez", async ({ page }) => {
+  test.setTimeout(300_000);
+  const n = LOOKS.length + 2;
+  let p = base(Array.from({ length: n }, (_, i) => [["a.webm", "b.webm", "c.webm"][i % 3], (i % 6) * 0.5, (i % 6) * 0.5 + 0.5] as [string, number, number]));
+  p = withVideo(p, 0, { color: { brightness: 0.3, contrast: 0.4, saturation: -0.5, temperature: 0.6, exposure: 0.2 } });
+  LOOKS.forEach((l, i) => (p = withVideo(p, i + 1, { look: { id: l.id, intensity: i % 2 ? 0.7 : 1 } })));
+  p = withVideo(p, n - 1, { sharpen: 0.8, color: { brightness: -0.2, contrast: -0.3, saturation: 0.6, temperature: -0.5, exposure: -0.3 } });
+  await check(page, p, midFrames(p, ["ajustes", ...LOOKS.map((l) => `look-${l.id}`), "nitidez-y-ajustes"]), "color", 0.95);
+});
+
+test("paridad: zoom y paneo con keyframes", async ({ page }) => {
+  test.setTimeout(300_000);
+  let p = base([["a.webm", 0, 4], ["b.webm", 0, 2]]);
+  p = withVideo(p, 0, {
+    zoom: [
+      { id: 1, t: 0.5, zoom: 1, cx: 0.5, cy: 0.5, easing: "easeInOut" },
+      { id: 2, t: 2, zoom: 2.5, cx: 0.3, cy: 0.7, easing: "linear" },
+      { id: 3, t: 3.5, zoom: 1.5, cx: 0.95, cy: 0.1, easing: "easeOut" },
+    ],
+  });
+  p = withVideo(p, 1, { zoom: [{ id: 1, t: 0, zoom: 3, cx: 0.6, cy: 0.4, easing: "linear" }] });
+  await check(page, p, { "antes": 10, "acercando": 35, "en-key": 60, "paneando": 80, "acotado-al-borde": 110, "zoom-fijo": 150 }, "zoom", 0.95);
 });

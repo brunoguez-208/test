@@ -2,43 +2,26 @@
 // lienzo, resuelve la transición y copia al canvas con el fundido global.
 
 import { BLIT_FRAG, CLIP_FRAG, OVERLAY_FRAG, TRANSITION_FRAG, TRANSITION_INDEX, VERT } from "./shaders";
+import type { ColorPipeline } from "./color";
 
 export interface ClipDraw {
   source: TexImageSource;
-  /** Tamaño de visualización del original (con la rotación de los metadatos ya aplicada). */
-  srcW: number;
-  srcH: number;
-  crop: { x: number; y: number; w: number; h: number } | null;
+  /** Tamaño de la textura (para el paso de la nitidez). */
+  texW: number;
+  texH: number;
+  /** Recorte normalizado del cuadro ya rotado (redondeado como en la exportación). */
+  crop: { x: number; y: number; w: number; h: number };
+  /** Tamaño visible del clip (después de rotar y recortar): define el encaje en el lienzo. */
+  dispW: number;
+  dispH: number;
   rotate: number;
   flipH: boolean;
   flipV: boolean;
   zoom: { zoom: number; cx: number; cy: number };
-  color: ColorUniforms;
-}
-
-export interface ColorUniforms {
-  brightness: number;
-  contrast: number;
-  saturation: number;
-  temperature: number;
-  exposure: number;
-  gamma: number;
-  look: number[]; // mat3 (column-major)
-  lookMix: number;
+  color: ColorPipeline | null;
+  /** Peso de la nitidez en 1/64 (0 = sin nitidez). */
   sharpen: number;
 }
-
-export const NEUTRAL_COLOR: ColorUniforms = {
-  brightness: 0,
-  contrast: 1,
-  saturation: 1,
-  temperature: 0,
-  exposure: 0,
-  gamma: 1,
-  look: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-  lookMix: 0,
-  sharpen: 0,
-};
 
 export interface FrameDraw {
   a: ClipDraw | null;
@@ -86,6 +69,8 @@ export class Renderer {
   private th = 0;
   private videoTex: WebGLTexture[] = [];
   private layerTex: WebGLTexture;
+  private curveTex: WebGLTexture[] = [];
+  private curveKey: (string | null)[] = [null, null];
   lost = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -97,7 +82,7 @@ export class Renderer {
       this.lost = true;
     });
     this.clipProg = this.program(CLIP_FRAG, [
-      "uSize", "uTex", "uRect", "uCrop", "uRotate", "uFlip", "uZoom", "uColor", "uExposure", "uGamma", "uLook", "uLookMix", "uTexel", "uSharpen",
+      "uSize", "uTex", "uCurves", "uRect", "uCrop", "uRotate", "uFlip", "uZoom", "uColor", "uAdjM", "uAdjO", "uLookM", "uLookO", "uTexel", "uSharpen",
     ]);
     this.transProg = this.program(TRANSITION_FRAG, ["uSize", "uA", "uB", "uP", "uKind"]);
     this.blitProg = this.program(BLIT_FRAG, ["uSize", "uSrc", "uSrcSize", "uFade"]);
@@ -115,6 +100,13 @@ export class Renderer {
     this.vao = vao;
     this.videoTex = [this.texture(true), this.texture(true)];
     this.layerTex = this.texture(false);
+    this.curveTex = [0, 1].map(() => {
+      const t = this.texture(false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      return t;
+    });
   }
 
   private program(frag: string, uniforms: string[]): Program {
@@ -181,27 +173,34 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c.source);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, downscale ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
     if (downscale) gl.generateMipmap(gl.TEXTURE_2D);
-    const crop = c.crop ?? { x: 0, y: 0, w: 1, h: 1 };
     const rot = (((Math.round(c.rotate / 90) % 4) + 4) % 4) as 0 | 1 | 2 | 3;
-    let cw = c.srcW * crop.w;
-    let ch = c.srcH * crop.h;
-    if (rot % 2 === 1) [cw, ch] = [ch, cw];
-    const r = fitRect(cw, ch, w, h);
+    const r = fitRect(c.dispW, c.dispH, w, h);
     gl.uniform2f(P.loc.uSize, w, h);
     gl.uniform1i(P.loc.uTex, 0);
     gl.uniform4f(P.loc.uRect, r.x, r.y, r.w, r.h);
-    gl.uniform4f(P.loc.uCrop, crop.x, crop.y, crop.w, crop.h);
+    gl.uniform4f(P.loc.uCrop, c.crop.x, c.crop.y, c.crop.w, c.crop.h);
     gl.uniform1i(P.loc.uRotate, rot);
     gl.uniform2f(P.loc.uFlip, c.flipH ? 1 : 0, c.flipV ? 1 : 0);
     gl.uniform3f(P.loc.uZoom, Math.max(1, c.zoom.zoom), c.zoom.cx, c.zoom.cy);
     const col = c.color;
-    gl.uniform4f(P.loc.uColor, col.brightness, col.contrast, col.saturation, col.temperature);
-    gl.uniform1f(P.loc.uExposure, col.exposure);
-    gl.uniform1f(P.loc.uGamma, col.gamma);
-    gl.uniformMatrix3fv(P.loc.uLook, false, col.look);
-    gl.uniform1f(P.loc.uLookMix, col.lookMix);
-    gl.uniform2f(P.loc.uTexel, 1 / Math.max(1, c.srcW), 1 / Math.max(1, c.srcH));
-    gl.uniform1f(P.loc.uSharpen, col.sharpen);
+    gl.uniform1i(P.loc.uColor, col ? (col.hasCurves ? 2 : 1) : 0);
+    if (col) {
+      // Filas de Rust → columnas de GL: en el shader se usa c * M.
+      gl.uniformMatrix3fv(P.loc.uAdjM, false, col.adjust.m);
+      gl.uniform3fv(P.loc.uAdjO, col.adjust.o);
+      gl.uniformMatrix3fv(P.loc.uLookM, false, col.look.m);
+      gl.uniform3fv(P.loc.uLookO, col.look.o);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.curveTex[slot]);
+      if (this.curveKey[slot] !== col.key) {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RGBA, gl.UNSIGNED_BYTE, col.curves);
+        this.curveKey[slot] = col.key;
+      }
+      gl.uniform1i(P.loc.uCurves, 2);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    gl.uniform2f(P.loc.uTexel, 1 / Math.max(1, c.texW), 1 / Math.max(1, c.texH));
+    gl.uniform1f(P.loc.uSharpen, (4 * c.sharpen) / 64);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
@@ -221,7 +220,7 @@ export class Renderer {
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
     };
-    const down = (c: ClipDraw) => c.srcW > renderW * 1.5 || c.srcH > renderH * 1.5;
+    const down = (c: ClipDraw) => c.sharpen === 0 && (c.texW > renderW * 1.5 || c.texH > renderH * 1.5);
     if (f.a) this.drawClip(f.a, 0, ta, renderW, renderH, down(f.a));
     else clear(ta);
     let result = ta;

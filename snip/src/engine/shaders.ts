@@ -20,62 +20,55 @@ vec4 mixF(vec4 a, vec4 b, float m) { return a * m + b * (1.0 - m); }
 `;
 
 /**
- * Clip → lienzo. Mapea cada píxel del lienzo al original:
- * lienzo → (zoom/paneo) → rectángulo encajado → volteo → rotación → recorte → video.
- * Después aplica los ajustes de color (en el mismo orden que el filtro de FFmpeg).
+ * Clip → lienzo, en el mismo orden que la cadena de FFmpeg (filters.rs):
+ * rotar → voltear → recortar → nitidez (luma) → color → encajar en el lienzo → zoom/paneo.
+ * Acá se recorre al revés: píxel del lienzo → ventana del zoom → rectángulo
+ * encajado → recorte → volteo → rotación → textura del video.
  */
 export const CLIP_FRAG = `${COMMON}
 uniform sampler2D uTex;
+uniform sampler2D uCurves;   // 256×1: curvas r, g, b del look (como lutrgb)
 uniform vec4 uRect;          // x, y, w, h del contenido encajado (píxeles del lienzo)
-uniform vec4 uCrop;          // recorte normalizado del original (x, y, w, h)
+uniform vec4 uCrop;          // recorte normalizado del cuadro ya rotado y volteado
 uniform int uRotate;         // 0, 1, 2, 3 (× 90° horario)
 uniform vec2 uFlip;          // 1 = volteado
-uniform vec3 uZoom;          // zoom, centro x, centro y (normalizado)
-uniform vec4 uColor;         // brillo, contraste, saturación, temperatura (FFmpeg)
-uniform float uExposure;
-uniform float uGamma;
-uniform mat3 uLook;          // matriz de color del look (identidad si no hay)
-uniform float uLookMix;
-uniform vec2 uTexel;         // 1 / tamaño de la textura (nitidez)
-uniform float uSharpen;
+uniform vec3 uZoom;          // zoom, centro x, centro y de la ventana visible (normalizado)
+uniform int uColor;          // 0 = sin color, 1 = afines, 2 = afines + curvas
+uniform mat3 uAdjM;          // ajustes (por filas: se usa c * M)
+uniform vec3 uAdjO;
+uniform mat3 uLookM;
+uniform vec3 uLookO;
+uniform vec2 uTexel;         // 1 / tamaño de la textura
+uniform float uSharpen;      // 4·a/64 (laplaciano de luma de convolution)
 
-vec3 applyColor(vec3 c) {
-  // exposure (FFmpeg: exposure=EV) → multiplica por 2^EV
-  c = c * exp2(uExposure);
-  // eq: contraste, brillo, saturación y gamma (como vf_eq en RGB equivalente)
-  c = (c - 0.5) * uColor.y + 0.5 + uColor.x;
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(vec3(l), c, uColor.z);
-  c = pow(max(c, 0.0), vec3(1.0 / uGamma));
-  // temperatura: balance azul/rojo
-  c.r *= 1.0 + uColor.w * 0.18;
-  c.b *= 1.0 - uColor.w * 0.18;
-  vec3 looked = clamp(uLook * c, 0.0, 1.0);
-  return clamp(mix(c, looked, uLookMix), 0.0, 1.0);
-}
+float luma601(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+float curve(float v, int ch) { return texelFetch(uCurves, ivec2(int(floor(v * 255.0 + 0.5)), 0), 0)[ch]; }
 
 void main() {
   vec2 p = pixel() + 0.5;
-  // Zoom / paneo sobre el lienzo.
-  vec2 center = uZoom.yz * uSize;
-  vec2 q = (p - center) / uZoom.x + center;
+  // Ventana del zoom (perspective de FFmpeg): centro × tamaño + desplazamiento / zoom.
+  vec2 q = uZoom.yz * uSize + (p - 0.5 * uSize) / uZoom.x;
   vec2 uv = (q - uRect.xy) / uRect.zw;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
-  if (uFlip.x > 0.5) uv.x = 1.0 - uv.x;
-  if (uFlip.y > 0.5) uv.y = 1.0 - uv.y;
-  // Deshacer la rotación (horaria) del contenido.
-  vec2 r = uv;
-  if (uRotate == 1) r = vec2(uv.y, 1.0 - uv.x);
-  else if (uRotate == 2) r = vec2(1.0 - uv.x, 1.0 - uv.y);
-  else if (uRotate == 3) r = vec2(1.0 - uv.y, uv.x);
-  vec2 src = uCrop.xy + r * uCrop.zw;
+  vec2 r = uCrop.xy + uv * uCrop.zw;
+  if (uFlip.x > 0.5) r.x = 1.0 - r.x;
+  if (uFlip.y > 0.5) r.y = 1.0 - r.y;
+  vec2 src = r;
+  if (uRotate == 1) src = vec2(r.y, 1.0 - r.x);
+  else if (uRotate == 2) src = vec2(1.0 - r.x, 1.0 - r.y);
+  else if (uRotate == 3) src = vec2(1.0 - r.y, r.x);
   vec3 c = texture(uTex, src).rgb;
   if (uSharpen > 0.0) {
-    vec3 blur = (texture(uTex, src + vec2(uTexel.x, 0.0)).rgb + texture(uTex, src - vec2(uTexel.x, 0.0)).rgb +
-                 texture(uTex, src + vec2(0.0, uTexel.y)).rgb + texture(uTex, src - vec2(0.0, uTexel.y)).rgb) * 0.25;
-    c = c + (c - blur) * uSharpen;
+    float avg = (luma601(texture(uTex, src + vec2(uTexel.x, 0.0)).rgb) + luma601(texture(uTex, src - vec2(uTexel.x, 0.0)).rgb) +
+                 luma601(texture(uTex, src + vec2(0.0, uTexel.y)).rgb) + luma601(texture(uTex, src - vec2(0.0, uTexel.y)).rgb)) * 0.25;
+    c = clamp(c + vec3(uSharpen * (luma601(c) - avg)), 0.0, 1.0);
   }
-  outColor = vec4(applyColor(c), 1.0);
+  if (uColor > 0) {
+    c = clamp(c * uAdjM + uAdjO, 0.0, 1.0);
+    c = clamp(c * uLookM + uLookO, 0.0, 1.0);
+    if (uColor > 1) c = vec3(curve(c.r, 0), curve(c.g, 1), curve(c.b, 2));
+  }
+  outColor = vec4(c, 1.0);
 }
 `;
 

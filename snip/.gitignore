@@ -8,3 +8,5 @@ test-results/
 playwright-report/
 e2e/screenshots/
 *.log
+src-tauri/binaries/whisper/*.dll
+src-tauri/binaries/whisper/*.exe

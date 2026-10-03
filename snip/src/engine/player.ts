@@ -6,8 +6,9 @@ import type { Clip, MediaRef, MusicClip, Project } from "../project/model";
 import { canvasFps, LOUDNORM_I } from "../project/model";
 import { activeAt, layout, sourceTime, totalDuration, type Span } from "../project/timeline";
 import { dbToGain, resumeAudio, setGain, setMasterVolume } from "./audio";
-import { NEUTRAL_COLOR, Renderer, type ClipDraw, type FrameDraw } from "./renderer";
-import { clipColorUniforms, zoomAt } from "./effects";
+import { Renderer, type ClipDraw, type FrameDraw } from "./renderer";
+import { clipGeometry, zoomAt } from "./effects";
+import { colorPipeline, sharpenWeight } from "./color";
 
 export interface ClipSource {
   url: string;
@@ -74,6 +75,8 @@ export class Player {
   muted = false;
   renderW = 1920;
   renderH = 1080;
+  /** Edición del recorte / zoom: el clip se dibuja sin recorte o sin zoom. */
+  override: { clipId: string; noCrop?: boolean; noZoom?: boolean } | null = null;
 
   constructor(resolver: SourceResolver) {
     this.resolver = resolver;
@@ -511,16 +514,22 @@ export class Player {
     const s = this.slots.find((x) => x.owner === c.id);
     if (!s || s.el.readyState < 2 || s.el.videoWidth === 0) return null;
     const u = Math.max(0, this.time - this.spans[i].start);
+    const media = p.media.find((m) => m.id === c.mediaId);
+    const geo = clipGeometry(c.video, media && media.width > 0 ? media : { width: s.el.videoWidth, height: s.el.videoHeight });
+    const ov = this.override?.clipId === c.id ? this.override : null;
     return {
       source: s.el,
-      srcW: s.el.videoWidth,
-      srcH: s.el.videoHeight,
-      crop: c.video.crop,
+      texW: s.el.videoWidth,
+      texH: s.el.videoHeight,
+      crop: ov?.noCrop ? { x: 0, y: 0, w: 1, h: 1 } : geo.crop,
+      dispW: ov?.noCrop ? geo.fullWidth : geo.width,
+      dispH: ov?.noCrop ? geo.fullHeight : geo.height,
       rotate: c.video.rotate,
       flipH: c.video.flipH,
       flipV: c.video.flipV,
-      zoom: zoomAt(c.video.zoom, u),
-      color: clipColorUniforms(c.video) ?? NEUTRAL_COLOR,
+      zoom: ov?.noZoom ? { zoom: 1, cx: 0.5, cy: 0.5 } : zoomAt(c.video.zoom, u),
+      color: colorPipeline(c.video.color, c.video.look),
+      sharpen: sharpenWeight(c.video.sharpen),
     };
   }
 

@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { useEffect, useState } from "react";
 import type { Project } from "../project/model";
+import { fitCanvas } from "../project/ops";
 import { beginGesture, cancelGesture, commit, createHistory, endGesture, redo, replace, sameEdit, undo, type History } from "../project/history";
 import type { AppError, EncoderInfo, PlatformLimits, ProjectSummary, QueueItem, RecentFile } from "../lib/types";
 
@@ -203,8 +204,10 @@ export function edit(f: (p: Project) => Project) {
   const tab = activeTab(s);
   if (!tab) return;
   const before = tab.history.present;
-  const next = f(before);
-  if (next === before) return;
+  const changed = f(before);
+  if (changed === before) return;
+  // El lienzo automático sigue al primer clip (si se rota, recorta, borra o reordena).
+  const next = fitCanvas(changed);
   const stamped = sameEdit(next, before) ? next : { ...next, updatedAt: Date.now() };
   updateTab(tab.id, (t) => ({ ...t, history: commit(t.history, stamped) }));
 }
