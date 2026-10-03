@@ -9,7 +9,7 @@ se corta, se retoma desde acá.
 - [x] Código de Snip 1.0 importado al repo (`snip/`), tests de base en verde
       (Rust 19 integración + unit, Vitest 42, Playwright 18).
 - [x] **Tanda 1** — base del editor (instalador generado)
-- [ ] **Tanda 2** — imagen, texto y efectos (en curso)
+- [x] **Tanda 2** — imagen, texto y efectos (instalador final generado)
 
 ## Decisiones tomadas
 
@@ -116,7 +116,21 @@ se corta, se retoma desde acá.
 - [x] 32. Marca de agua / logo
 - [x] 33. Desenfocar / pixelar zona
 - [x] 34. Picture-in-picture
-- [ ] Tests completos + instalador final
+- [x] Tests completos + instalador final (`Snip_2.0.0_x64-setup.exe`, 62,5 MB)
+
+### Tests al cierre de la tanda 2
+- Rust: 131 unit (compilador de filtros por efecto, color/looks, zonas, PiP, capas,
+  transcripción, descarga, carpetas de capas) + 17 integración con FFmpeg real (incluye un
+  export que combina todo lo de la tanda 2 y la extracción de audio para transcribir).
+- Paridad SSIM preview ↔ exportación: 8 escenarios (transiciones, velocidad/fundidos,
+  geometría, color y cada look, zoom con keyframes, textos/logo/subtítulos, zonas y PiP),
+  todos ≥ 0,95.
+- Vitest: 78. Playwright con IPC simulado: 50 (incluye imagen, textos, subtítulos,
+  subtítulos automáticos, zonas, PiP, tema claro/oscuro, movimiento reducido, rendimiento).
+- Windows (con wine): `ffmpeg.exe` shared con sus DLL procesa los filtros nuevos;
+  `whisper-cli.exe` carga y, sin GPU, cae solo al backend de CPU.
+- No probado acá: transcripción real (Hugging Face bloqueado en este entorno), GPU real
+  (NVENC, Vulkan), notificaciones de Windows, asociaciones y menú contextual.
 
 ### Notas de la tanda 2
 - **Paridad por construcción**: Rust (`filters.rs`, `color.rs`) y el shader del preview siguen la
