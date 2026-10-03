@@ -94,7 +94,8 @@ pub fn plan_bitrate(i: &SizeInput) -> Result<BitratePlan, AppError> {
             "Los GIF no admiten un tamaño máximo: bajá los fps o el ancho para que pesen menos.",
         ));
     }
-    if !(i.megabytes > 0.0) || !(i.duration > 0.0) {
+    let positive = |x: f64| x.is_finite() && x > 0.0;
+    if !positive(i.megabytes) || !positive(i.duration) {
         return Err(AppError::with_message(ErrorKind::InvalidRange, "El tamaño máximo tiene que ser mayor a 0 MB."));
     }
     let bytes = i.megabytes * MB * i.ratio.clamp(0.5, 1.0);

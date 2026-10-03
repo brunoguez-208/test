@@ -386,6 +386,8 @@ pub struct Overlay {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
+// Pocas capas por proyecto: no vale la pena encajonar la variante de texto.
+#[allow(clippy::large_enum_variant)]
 pub enum OverlayContent {
     Text(TextLayer),
     /// Imagen fija: logo, marca de agua o PiP de imagen.
@@ -611,7 +613,7 @@ pub struct TimeRange {
 
 // -------------------------------- Subtítulos ----------------------------------
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Subtitles {
     #[serde(default)]
@@ -623,12 +625,6 @@ pub struct Subtitles {
     pub word_by_word: bool,
     #[serde(default)]
     pub language: Option<String>,
-}
-
-impl Default for Subtitles {
-    fn default() -> Self {
-        Self { cues: vec![], style: SubtitleStyle::default(), word_by_word: false, language: None }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

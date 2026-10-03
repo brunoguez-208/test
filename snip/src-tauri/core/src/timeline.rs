@@ -90,7 +90,7 @@ pub fn source_time(c: &Clip, u: f64) -> f64 {
     let pass = (u / seg).floor();
     let p = u - pass * seg;
     let forward = match c.loop_mode {
-        LoopMode::Boomerang => (pass as u64) % 2 == 0,
+        LoopMode::Boomerang => (pass as u64).is_multiple_of(2),
         _ => true,
     };
     let forward = forward != c.reverse;

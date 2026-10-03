@@ -8,8 +8,8 @@ se corta, se retoma desde acá.
 
 - [x] Código de Snip 1.0 importado al repo (`snip/`), tests de base en verde
       (Rust 19 integración + unit, Vitest 42, Playwright 18).
-- [ ] **Tanda 1** — base del editor (en curso)
-- [ ] **Tanda 2** — imagen, texto y efectos
+- [x] **Tanda 1** — base del editor (instalador generado)
+- [ ] **Tanda 2** — imagen, texto y efectos (en curso)
 
 ## Decisiones tomadas
 
@@ -49,31 +49,58 @@ se corta, se retoma desde acá.
   exportación usa loudnorm lineal con esas medidas y el preview aplica la ganancia equivalente.
 
 ## Tanda 1 — checklist
-- [ ] 0. Modelo de proyecto + migraciones + matemática de tiempos (Rust + TS)
-- [ ] 1. Timeline multi-clip (agregar, unir, reordenar)
-- [ ] 2. Dividir (S) y borrar (Supr) con cierre de huecos
-- [ ] 3. Exportar fragmentos como archivos separados
-- [ ] 4. Deshacer / rehacer
-- [ ] 5. Zoom del timeline con miniaturas regeneradas
-- [ ] 6. Marcadores (M)
-- [ ] 7. Velocidad 0.25x–4x con atempo
-- [ ] 8. Cámara lenta suave (minterpolate)
-- [ ] 9. Invertir
-- [ ] 10. Congelar frame
-- [ ] 11. Loop / boomerang
-- [ ] 12. Audio por clip (volumen, silenciar, quitar, fades, loudnorm, afftdn)
-- [ ] 13. Pista de música (+ ducking)
-- [ ] 14. Forma de onda
-- [ ] 15. Extraer audio a MP3
-- [ ] 16. Fundido a negro
-- [ ] 17. Transiciones (xfade)
-- [ ] 18. Guardar frame como PNG
-- [ ] 19. Presets de tamaño por plataforma
-- [ ] 20. Cola de exportación + notificación de Windows
-- [ ] 21. Proyectos: autoguardado, sin terminar, `.snip`, recientes, pestañas
-- [ ] Formatos de entrada MP4/MOV/MKV/WebM, salida MP4/MOV/MKV/WebM/GIF/MP3
-- [ ] Menú contextual "Editar con Snip" + asociación `.snip`
-- [ ] Tests completos + instalador de la tanda 1
+- [x] 0. Modelo de proyecto + migraciones + matemática de tiempos (Rust + TS)
+- [x] 1. Timeline multi-clip (agregar, unir, reordenar)
+- [x] 2. Dividir (S) y borrar (Supr) con cierre de huecos
+- [x] 3. Exportar fragmentos como archivos separados
+- [x] 4. Deshacer / rehacer
+- [x] 5. Zoom del timeline con miniaturas regeneradas
+- [x] 6. Marcadores (M)
+- [x] 7. Velocidad 0.25x–4x con atempo
+- [x] 8. Cámara lenta suave (minterpolate)
+- [x] 9. Invertir
+- [x] 10. Congelar frame
+- [x] 11. Loop / boomerang
+- [x] 12. Audio por clip (volumen, silenciar, quitar, fades, loudnorm, afftdn)
+- [x] 13. Pista de música (+ ducking)
+- [x] 14. Forma de onda
+- [x] 15. Extraer audio a MP3
+- [x] 16. Fundido a negro
+- [x] 17. Transiciones (xfade)
+- [x] 18. Guardar frame como PNG
+- [x] 19. Presets de tamaño por plataforma
+- [x] 20. Cola de exportación + notificación de Windows
+- [x] 21. Proyectos: autoguardado, sin terminar, `.snip`, recientes, pestañas
+- [x] Formatos de entrada MP4/MOV/MKV/WebM, salida MP4/MOV/MKV/WebM/GIF/MP3
+- [x] Menú contextual "Editar con Snip" + asociación `.snip`
+- [x] Tests completos + instalador de la tanda 1 (`Snip_2.0.0_x64-setup.exe`)
+
+### Notas de la tanda 1
+- **Discord gratis: 20 MB** (subió de 10 MB en agosto de 2026; verificado el 2026-10-03).
+  Nitro Basic 50 MB, Nitro 500 MB, WhatsApp 16 MB. Todo en
+  `src-tauri/core/config/platform_limits.json` (MB = 1.000.000 bytes, objetivo 95 %).
+- Tamaño objetivo: 2 pasadas con libx264/VP9; con NVENC, `multipass` + verificación del
+  tamaño real y reintento con menos bitrate (hasta 4 veces). Nunca se entrega un archivo
+  por encima del límite (test de integración con video "difícil" de ruido).
+- Asociaciones: "Editar con Snip" en el menú contextual de .mp4/.mov/.mkv/.webm
+  (`SnipEdit`, reemplaza al "Recortar con Snip" de la 1.0, que el instalador borra) y en
+  "Abrir con" sin robar el doble click. Los `.snip` sí abren Snip con doble click y tienen
+  ícono propio (`icons/snip-file.ico`).
+- Notificaciones de Windows con `tauri-plugin-notification` al terminar cada exportación
+  en segundo plano.
+
+### Tests al cierre de la tanda 1
+- Rust: unit tests del compilador de filtros por funcionalidad, modelo/migraciones,
+  bitrate, cola; integración con FFmpeg 9 real (proyectos combinados, formatos, tamaño
+  objetivo siempre bajo el límite, fragmentos, modo rápido, cancelación).
+- Paridad preview ↔ exportación (`e2e/parity.spec.ts`): el compositor WebGL y FFmpeg
+  renderizan el mismo proyecto; SSIM ≥ 0,95 en cada transición, velocidad ×2/×0,5,
+  barras y fundidos (control negativo: un cuadro corrido da 0,85–0,93).
+- Vitest: modelo, operaciones del timeline, deshacer/rehacer, timecode, atajos.
+- Playwright con IPC simulado: flujos completos, claro/oscuro, movimiento reducido,
+  sin errores en consola; rendimiento con 12 clips.
+- `tsc` y `cargo clippy -D warnings` (target Windows) sin errores ni avisos.
+
 
 ## Tanda 2 — checklist
 - [ ] 22. Crop con proporciones

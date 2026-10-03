@@ -400,10 +400,9 @@ pub fn compile(p: &Project, o: &CompileOptions) -> Result<Compiled, AppError> {
 
     // 1) Clips
     let mut outs = vec![];
-    for i in a..=b {
-        let c = &p.clips[i];
+    for (c, span) in p.clips[a..=b].iter().zip(&spans[a..=b]) {
         let inter = o.intermediates.get(&c.id);
-        outs.push(compile_clip(&mut g, &mut inputs, p, c, &spans[i], want_video, want_audio, inter)?);
+        outs.push(compile_clip(&mut g, &mut inputs, p, c, span, want_video, want_audio, inter)?);
     }
 
     // 2) Unir con concat / xfade

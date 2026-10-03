@@ -91,7 +91,7 @@ pub fn run() {
                     let heavy = st.heavy_dir();
                     let temp = st.temp_dir();
                     let env = ExportEnv { tools: &st.tools, encoder: st.encoder(), heavy_dir: &heavy, temp_dir: &temp };
-                    export_project(&env, job, ctl, |p| progress(p), |failed| st.mark_encoder_failed(failed))
+                    export_project(&env, job, ctl, progress, |failed| st.mark_encoder_failed(failed))
                 }),
                 Arc::new(move |items| {
                     let _ = h_list.emit("queue-updated", QueueEvent { items });
