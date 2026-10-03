@@ -7,6 +7,7 @@ import { Preview } from "./Preview";
 import { Transport } from "../Transport";
 import { Timeline } from "../timeline/Timeline";
 import { Inspector } from "../inspector/Inspector";
+import { Library } from "../library/Library";
 
 const rise = (delay: number) => ({
   initial: { opacity: 0, y: 14 },
@@ -25,6 +26,7 @@ export function Editor() {
   // El editor no escucha el zoom/scroll del timeline (solo el timeline lo hace).
   const project = useProjectSansView();
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
+  const libraryOpen = useEditor((s) => s.libraryOpen);
   const loop = useEditor((s) => s.loop);
   const markIn = useEditor((s) => activeTab(s)?.markIn ?? null);
   const markOut = useEditor((s) => activeTab(s)?.markOut ?? null);
@@ -45,6 +47,7 @@ export function Editor() {
       data-testid="editor"
     >
       <LayoutGroup>
+        <AnimatePresence initial={false}>{libraryOpen && <Library project={project} />}</AnimatePresence>
         <motion.div layout transition={{ type: "spring", stiffness: 380, damping: 40 }} className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 px-5 pb-4 pt-3">
           <motion.div layout="position" className="flex min-h-0 flex-1 flex-col" {...rise(0.02)}>
             <Preview project={project} />

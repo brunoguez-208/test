@@ -31,7 +31,7 @@ export interface Toast {
 
 /** Dónde caen archivos arrastrados desde el Explorador. */
 export interface DropTarget {
-  kind: "main" | "overlay" | "audio";
+  kind: "main" | "overlay" | "audio" | "library";
   /** Fila (capa o pista de audio); -1 = la primera libre. */
   row: number;
   time: number;
@@ -110,6 +110,10 @@ export interface EditorState {
   packaging: number | null;
   /** Exportar como proyecto .snip (formato de la pestaña Exportar). */
   exportAsSnip: boolean;
+  /** Biblioteca de medios (panel izquierdo). */
+  libraryOpen: boolean;
+  /** Visor de origen abierto (id del medio). */
+  sourceMedia: string | null;
   toasts: Toast[];
   focused: boolean;
   confirm: Confirm | null;
@@ -147,6 +151,8 @@ export const initialState: EditorState = {
   templates: [],
   packaging: null,
   exportAsSnip: false,
+  libraryOpen: false,
+  sourceMedia: null,
   toasts: [],
   focused: true,
   confirm: null,

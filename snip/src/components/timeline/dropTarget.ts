@@ -11,11 +11,11 @@ export function setDropGeo(g: Geo) {
 }
 
 export function dropTargetAt(x: number, y: number): DropTarget | null {
-  if (!geo) return null;
   const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (el?.closest("[data-library]")) return { kind: "library", row: -1, time: 0 };
   const track = el?.closest("[data-drop]") as HTMLElement | null;
   const area = el?.closest("[data-testid='timeline-area']") as HTMLElement | null;
-  if (!track || !area) return null;
+  if (!track || !area || !geo) return null;
   const kind = track.dataset.drop as DropTarget["kind"];
   const r = track.getBoundingClientRect();
   const rowH = Number(track.dataset.rowH || r.height || 1);

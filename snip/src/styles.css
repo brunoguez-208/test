@@ -733,6 +733,17 @@ kbd.kbd {
   content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 4px;
   background: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.06) 0 6px, transparent 6px 12px);
 }
+/* Biblioteca de medios */
+.library-panel { border-right: 1px solid var(--stroke-divider); border-left: none; }
+.lib-card { transition: background-color 83ms linear; }
+.lib-card:hover { background: var(--subtle-fill-hover); }
+.lib-card:active { cursor: grabbing; }
+.lib-card.is-missing { opacity: 0.8; cursor: default; }
+.lib-thumb { background: rgb(0 0 0 / 0.28); }
+.lib-audio { color: #d9a3ff; background: color-mix(in srgb, #c86bfa 18%, transparent); }
+.lib-kind, .lib-dur { background: rgb(0 0 0 / 0.55); color: #fff; }
+.lib-scrub { background: var(--accent-fill); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3); }
+.lib-used { background: var(--accent-fill); }
 .tl-track-btn { color: var(--text-tertiary); transition: background-color 83ms linear, color 83ms linear; }
 .tl-track-btn:hover { background: var(--subtle-fill-hover); color: var(--text-primary); }
 .tl-track-btn.is-on { color: var(--text-on-accent, #000); background: var(--accent-fill); }

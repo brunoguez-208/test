@@ -4,6 +4,7 @@ import { isAudio, isImage, isProjectFile, isVideo } from "../lib/files";
 import { useEditor } from "../store/editor";
 import { addMusicFile, addVideos, openPaths, warnUnsupported } from "../store/controller";
 import { importFilesAt } from "../store/clipboard";
+import { importToLibrary } from "../store/library";
 import { dropTargetAt } from "../components/timeline/dropTarget";
 
 export type DropKind = "open" | "add" | "music" | "invalid";
@@ -50,6 +51,10 @@ export function useDragDrop() {
         useEditor.setState({ drag: "none", dropTarget: null });
         // Soltado sobre una pista: va a esa pista, en ese tiempo.
         const t = inEditor ? (s.pos ? dropTargetAt(s.pos.x, s.pos.y) : null) : null;
+        if (t?.kind === "library") {
+          void importToLibrary(s.paths);
+          return;
+        }
         if (t) {
           void importFilesAt(s.paths, t.time, { target: t });
           return;

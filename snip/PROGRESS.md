@@ -327,3 +327,25 @@ un commit por funcionalidad. Al terminar la tanda A: tests completos + instalado
 - Vitest 108; Playwright 67 (chromium + paridad de video y de audio + rendimiento).
 - Versión 2.1.0. Instalador `Snip_2.1.0-tandaA_x64-setup.exe` (62,7 MB, SHA-256
   `065656fb…81ad6`) en la rama `instaladores`; la 2.0.0 quedó en `anteriores/`.
+
+
+## Actualización 2.1 — tanda B — checklist
+- [x] B1. Biblioteca de medios
+- [ ] B2. Visor de origen
+- [ ] B3. Rampas de velocidad
+- [ ] B4. Chroma key
+- [ ] B5. Presets de efectos (shake, zoom punch, flash, glitch, viñeta)
+- [ ] B6. Máscaras
+- [ ] B7. Herramientas automáticas (jugadas, silencios, beats)
+- [ ] B8. Pack de sonidos (CC0 / sintetizados)
+- [ ] Cierre: tests completos, instalador final, resumen y checklist manual
+
+### Notas de B1 (biblioteca de medios)
+- Panel izquierdo (botón en la barra de título): todos los medios del proyecto con miniatura,
+  duración y tipo; pasar el mouse por un video recorre su contenido (12 miniaturas pedidas en
+  paralelo); punto de color = está en el timeline. Búsqueda por nombre y orden por recientes,
+  nombre (natural: "2" antes que "10"), duración o tipo.
+- Importar sin tocar el timeline: botón +, soltar archivos del Explorador sobre el panel, o
+  Ctrl+V con el puntero/foco en el panel. Un medio que falta muestra "Buscar archivo".
+- Arrastrar una tarjeta a cualquier pista: guía en la pista y el tiempo, y se ubica con la misma
+  lógica que el drop del Explorador (`project/library.ts`, `placeMedia`).

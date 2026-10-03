@@ -1,4 +1,6 @@
-import { setDropGeo } from "./dropTarget";
+import { dropTargetAt, setDropGeo } from "./dropTarget";
+import { MEDIA_MIME } from "../library/Library";
+import { placeFromLibrary } from "../../store/library";
 import { TrackHeaders } from "./TrackHeaders";
 import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -351,6 +353,25 @@ export function Timeline({ project }: { project: Project }) {
           onWheel={onWheel}
           onPointerDown={(e) => {
             if (e.target === e.currentTarget) setSelection([]);
+          }}
+          onDragOver={(e) => {
+            // Un archivo de la biblioteca: guía en la pista y el tiempo bajo el puntero.
+            if (!e.dataTransfer.types.includes(MEDIA_MIME)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            const t = dropTargetAt(e.clientX, e.clientY);
+            if (JSON.stringify(t) !== JSON.stringify(useEditor.getState().dropTarget)) useEditor.setState({ dropTarget: t });
+          }}
+          onDragLeave={(e) => {
+            if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) useEditor.setState({ dropTarget: null });
+          }}
+          onDrop={(e) => {
+            const id = e.dataTransfer.getData(MEDIA_MIME);
+            if (!id) return;
+            e.preventDefault();
+            const t = dropTargetAt(e.clientX, e.clientY);
+            useEditor.setState({ dropTarget: null });
+            placeFromLibrary(id, t?.time ?? useEditor.getState().time, t);
           }}
           data-testid="timeline-area"
         >

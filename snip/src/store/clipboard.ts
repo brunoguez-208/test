@@ -8,7 +8,6 @@ import {
   copySelection,
   cutSelection,
   duplicate,
-  freeMusicTrack,
   effectsOf,
   groupItems,
   parseClipboard,
@@ -18,11 +17,12 @@ import {
   type ClipboardData,
   type Effects,
 } from "../project/clipboard";
-import { addImageAt, addOverlay, addPip, textFromTemplate } from "../project/overlayOps";
+import { addOverlay, textFromTemplate } from "../project/overlayOps";
 import { TEXT_TEMPLATES } from "../project/templates";
-import { addMusic, deleteClips, insertMedia, makeId, EditError } from "../project/ops";
-import { layout, totalDuration } from "../project/timeline";
-import { DEFAULT_VIDEO, type MediaRef, type Project } from "../project/model";
+import { deleteClips, makeId } from "../project/ops";
+import { DEFAULT_VIDEO, type MediaRef } from "../project/model";
+import { placeMedia } from "../project/library";
+import { importToLibrary, libraryActive } from "./library";
 import { unlockedOnly } from "../project/tracks";
 import type { MenuEntry } from "../components/ui/ContextMenu";
 import { activeProject, activeTab, edit, pushToast, setSelection, useEditor, type DropTarget } from "./editor";
@@ -177,13 +177,6 @@ async function probeAll(paths: string[]): Promise<MediaRef[]> {
   return out;
 }
 
-/** Index de la pista principal en el tiempo t (para insertar videos pegados). */
-function mainIndexAt(p: Project, t: number): number {
-  const spans = layout(p.clips);
-  const i = spans.findIndex((s) => t < (s.start + s.end) / 2);
-  return i < 0 ? p.clips.length : i;
-}
-
 /**
  * Agrega archivos en el tiempo `t` según su tipo: videos a la pista principal,
  * audio a una pista de audio libre, imágenes como capa. Con `target` (soltados
@@ -198,48 +191,12 @@ export async function importFilesAt(paths: string[], t = useEditor.getState().ti
   }
   const media = await probeAll(usable);
   if (!media.length) return;
-  const target = opts.target;
-  const ids: string[] = [];
+  let ids: string[] = [];
   try {
-    edit((p0) => {
-      let p = p0;
-      const asAudio = (m: MediaRef) => m.kind === "audio" || (m.kind === "video" && target?.kind === "audio" && m.hasAudio);
-      const asPip = (m: MediaRef) => m.kind === "video" && target?.kind === "overlay" && p.clips.length > 0;
-      const videos = media.filter((m) => m.kind === "video" && !asAudio(m) && !asPip(m));
-      if (videos.length) {
-        const before = new Set(p.clips.map((c) => c.id));
-        p = insertMedia(p, videos, mainIndexAt(p, t));
-        ids.push(...p.clips.filter((c) => !before.has(c.id)).map((c) => c.id));
-      }
-      if (!p.clips.length) throw new EditError("Agregá un video antes de sumar audio o imágenes.");
-      let at = Math.min(t, Math.max(0, totalDuration(p) - 0.2));
-      for (const m of media.filter(asAudio)) {
-        const before = new Set(p.music.map((x) => x.id));
-        p = addMusic(p, m, at);
-        const mu = p.music.find((x) => !before.has(x.id))!;
-        const prefer = target?.kind === "audio" && target.row >= 0 ? target.row : 0;
-        const track = freeMusicTrack(p, mu.start, mu.start + (mu.outPoint - mu.inPoint), prefer, mu.id);
-        p = { ...p, music: p.music.map((x) => (x.id === mu.id ? { ...x, track, volume: 1, fadeOut: 0 } : x)) };
-        ids.push(mu.id);
-      }
-      const inLane = (q: Project, id: string) => {
-        if (target?.kind !== "overlay" || target.row < 0) return q;
-        const o = q.overlays.find((x) => x.id === id)!;
-        const busy = q.overlays.some((x) => x.id !== id && x.lane === target.row && x.start < o.start + o.duration - 1e-6 && x.start + x.duration > o.start + 1e-6);
-        return busy ? q : { ...q, overlays: q.overlays.map((x) => (x.id === id ? { ...x, lane: target.row } : x)) };
-      };
-      for (const m of media.filter(asPip)) {
-        const [r, id] = addPip(p, m, at);
-        p = inLane(r, id);
-        ids.push(id);
-      }
-      for (const m of media.filter((x) => x.kind === "image")) {
-        const [r, id] = addImageAt(p, m, at);
-        p = inLane(r, id);
-        ids.push(id);
-        at = Math.min(at + 0.5, Math.max(0, totalDuration(p) - 0.5));
-      }
-      return p;
+    edit((p) => {
+      const [q, n] = placeMedia(p, media, t, opts.target);
+      ids = n;
+      return q;
     });
   } catch (e) {
     notifyEditError(e);
@@ -258,11 +215,11 @@ async function blobToBase64(b: Blob): Promise<string> {
 }
 
 /** Imagen pegada (Win+Shift+S, copiar imagen en el navegador) → capa de imagen. */
-export async function pasteImageBlob(blob: Blob) {
+export async function pasteImageBlob(blob: Blob, toLibrary = false) {
   const ext = blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : "png";
   try {
     const path = await api.saveClipboardImage(await blobToBase64(blob), ext);
-    await importFilesAt([path]);
+    await (toLibrary ? importToLibrary([path]) : importFilesAt([path]));
   } catch (e) {
     notifyError("No se pudo pegar la imagen", e);
   }
@@ -302,11 +259,13 @@ export async function paste(payload?: PastePayload) {
   const fromText = parseClipboard(payload?.text);
   if (fromText) return pasteData(fromText);
   if (internal && (!payload || payload.text === internalText || (!payload.text && !payload.images.length))) return pasteData(internal);
+  // Con la biblioteca activa (puntero o foco ahí), los archivos van a la biblioteca.
+  const toLibrary = libraryActive();
   if (hasTauri()) {
     const files = await api.clipboardFiles().catch(() => [] as string[]);
-    if (files.length) return importFilesAt(files);
+    if (files.length) return toLibrary ? importToLibrary(files) : importFilesAt(files);
   }
-  if (payload?.images.length) return pasteImageBlob(payload.images[0]);
+  if (payload?.images.length) return pasteImageBlob(payload.images[0], toLibrary);
   if (payload?.text.trim()) return pasteText(payload.text);
   if (internal) return pasteData(internal);
 }

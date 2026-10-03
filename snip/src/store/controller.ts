@@ -292,7 +292,7 @@ export async function relinkMedia(mediaId: string) {
   const old = p?.media.find((m) => m.id === mediaId);
   if (!tab || !p || !old) return;
   try {
-    const kind = old.kind === "audio" ? AUDIO_FILTER : VIDEO_FILTER;
+    const kind = old.kind === "audio" ? AUDIO_FILTER : old.kind === "image" ? IMAGE_FILTER : VIDEO_FILTER;
     const [path] = await pickFiles(`Buscar «${basename(old.path)}»`, [kind]);
     if (!path) return;
     const fresh = await api.probeMedia(path, old.id);

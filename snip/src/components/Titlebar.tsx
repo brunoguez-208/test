@@ -8,6 +8,7 @@ import {
   PanelRightExpand20Regular,
   QuestionCircle20Regular,
   DocumentBulletList20Regular,
+  Library20Regular,
 } from "@fluentui/react-icons";
 import { openContextMenu, type MenuEntry } from "./ui/ContextMenu";
 import { packageProject } from "../store/projectFiles";
@@ -74,6 +75,7 @@ export function Titlebar() {
   const phase = useEditor((s) => s.phase);
   const focused = useEditor((s) => s.focused);
   const inspectorOpen = useEditor((s) => s.inspectorOpen);
+  const libraryOpen = useEditor((s) => s.libraryOpen);
   const target = document.getElementById("titlebar-content");
   if (!target) return null;
 
@@ -174,6 +176,22 @@ export function Titlebar() {
             <QuestionCircle20Regular />
           </IconButton>
         </Tooltip>
+        <AnimatePresence>
+          {phase === "editor" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Tooltip content={libraryOpen ? "Ocultar la biblioteca" : "Biblioteca de medios"} placement="bottom">
+                <IconButton
+                  label={libraryOpen ? "Ocultar la biblioteca" : "Biblioteca de medios"}
+                  active={libraryOpen}
+                  onClick={() => useEditor.setState({ libraryOpen: !libraryOpen })}
+                  data-testid="toggle-library"
+                >
+                  <Library20Regular />
+                </IconButton>
+              </Tooltip>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <AnimatePresence>
           {phase === "editor" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
